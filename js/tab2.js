@@ -12,8 +12,8 @@
   const SCALE = 440;                       // 애니메이션 1 s = 실제 440 s (약 7분)
   const TREAL = 900, T = TREAL / SCALE, OM = 2 * Math.PI / T;   // 주기 15분 (모형), 애니메이션 주기
   const Y0 = 170, DS = 4.2;                // 평균 해수면, 수심 그리기 (y = Y0 + DS·√h, 실제 비율 아님)
-  const XS = 100, XDEEP = 620, XSHELF = 660, XSH2 = 800, XSHORE = 880, HMIN = 12;   // 진원, 깊은 바다 끝, 대륙붕 시작·끝, 해안선, 계산에 쓰는 최소 수심
-  const A0 = 11, AMAX = 46;                // 깊은 바다 진폭(px), 최대 진폭(px)
+  const XS = 100, XDEEP = 620, XSHELF = 660, XSH2 = 800, XSHORE = 880, HMIN = 25;   // 진원, 깊은 바다 끝, 대륙붕 시작·끝, 해안선, 계산에 쓰는 최소 수심
+  const A0 = 11, AMAX = 38;                // 깊은 바다 진폭(px), 최대 진폭(px)
   const TSLIP = 1.0, TE = 4.2;             // 단층 운동 시각, 교란이 퍼지기 시작하는 시각 (애니메이션 s)
   const N = 961;
   let H = 4000;                            // 깊은 바다 수심 (m)
@@ -104,13 +104,14 @@
   obsG.append(lGuide, lArrow, hLines, hArrow, vArrow);
   /* 이름표 */
   const labG = E('g'); svg.appendChild(labG);
-  const pL = pill('', { fs: 15, pad: 8, bg: '#7B4FB0', color: '#fff' }), pH = pill(TX.lbl.height, { fs: 15, pad: 8, bg: '#C7432E', color: '#fff' }), pV = pill('', { fs: 15, pad: 8 });
-  const pUp = pill(TX.lbl.uplift, { fs: 15, pad: 8, bg: '#FFE082' }), pCol = pill(TX.lbl.column, { fs: 14, pad: 7 }), pDots = pill(TX.lbl.dots, { fs: 13, pad: 7 });
-  const pEpi = pill(TX.lbl.epi, { fs: 14, pad: 7 }), pClock = pill('', { fs: 14, pad: 7 }), pMsl = pill(TX.lbl.msl, { fs: 13, pad: 6 });
-  const pDeep = pill('', { fs: 14, pad: 7 }), pShelf = pill(TX.lbl.shelf, { fs: 14, pad: 7 }), pCoast = pill(TX.lbl.coast, { fs: 14, pad: 7 });
-  const scale = E('g', {}, [E('path', { d: 'M240 516 V526 H390 V516', stroke: INK, 'stroke-width': 2.5, fill: 'none' }), E('text', { x: 315, y: 512, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 14, fill: INK, text: TX.lbl.scale })]);
+  const FS = 17;
+  const pL = pill('', { fs: FS, bg: '#7B4FB0', color: '#fff' }), pH = pill(TX.lbl.height, { fs: FS, bg: '#C7432E', color: '#fff' }), pV = pill('', { fs: FS });
+  const pUp = pill(TX.lbl.uplift, { fs: FS, bg: '#FFE082' }), pCol = pill(TX.lbl.column, { fs: FS }), pDots = pill(TX.lbl.dots, { fs: 15 });
+  const pEpi = pill(TX.lbl.epi, { fs: 15 }), pClock = pill('', { fs: 16 }), pMsl = pill(TX.lbl.msl, { fs: 15 });
+  const pDeep = pill('', { fs: 16 }), pShelf = pill(TX.lbl.shelf, { fs: 16 }), pCoast = pill(TX.lbl.coast, { fs: 16 });
+  const scale = E('g', {}, [E('path', { d: 'M240 516 V526 H390 V516', stroke: INK, 'stroke-width': 2.5, fill: 'none' }), E('text', { x: 315, y: 512, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 16, fill: INK, text: TX.lbl.scale })]);
   labG.append(scale, ...[pDeep, pShelf, pCoast, pMsl, pEpi, pUp, pCol, pDots, pL, pH, pV, pClock].map(p => p.g));
-  pMsl.move(60, Y0 - 14); pCoast.move(925, LANDY(925) + 40);
+  pMsl.move(70, Y0 - 18); pCoast.move(922, Y0 + 150);
 
   let t = 0, playing = false, stopAt = null, dotsOn = false;
   const setCap = explainCard($('#ex2'));
@@ -134,7 +135,7 @@
       bed += (bed ? 'L' : 'M') + x + ' ' + f1(yb);
     }
     bed += `L${XSHORE} ${Y0}`;
-    for (let x = 0; x <= XSHORE; x += 3) surf += (surf ? 'L' : 'M') + x + ' ' + f1(Y0 - eta(x, t));
+    for (let x = 0; x <= XSHORE; x += 2) surf += (surf ? 'L' : 'M') + x + ' ' + f1(Y0 - eta(x, t));
     crust.setAttribute('d', bed + `L${XSHORE} 560 L-10 560 L-10 ${f1(Y0 + dpx[0])} Z`);
     // 물: 수면 → 해저를 거꾸로
     let back = ''; for (let x = XSHORE; x >= 0; x -= 3) back += `L${x} ${f1(Y0 + at(dpx, x) - 10 * up * hump(x))}`;
@@ -152,8 +153,8 @@
     const st = stageAt(t);
     upA.style.display = st === 0 && t > TSLIP - .3 ? '' : 'none';
     upA.setAttribute('d', arrow1D(XS + 25, yb0 + 40, XS + 25, yb0 + 8 - 10 * up, 10));
-    pUp.show(st === 0); pUp.move(XS + 130, Y0 - 34);
-    pEpi.move(sx - 42, sy);
+    pUp.show(st === 0); pUp.move(XS + 170, yb0 - 40);
+    pEpi.move(sx - 46, sy);
     /* ② 물기둥 전체가 들어 올려짐 */
     const colOn = st === 1 && t < TE + .4;
     colG.style.display = colOn ? '' : 'none'; pCol.show(colOn);
@@ -183,8 +184,10 @@
       const x0 = cr(k), y0 = Y0 - eta(x0, t);
       readX = x0;
       const c = cms(Math.max(at(hx, x0), HMIN));
-      pV.set(TX.lbl.speed(c)); pV.move(x0 + 8 + pV.width() / 2, Y0 + 30);
-      vArrow.setAttribute('d', arrow1D(x0 - 2, Y0 + 30, x0 + 6, Y0 + 30, 6));
+      // 속도: 파봉 아래 물속(해안 가까이에서는 왼쪽)에 → 와 함께
+      const yv = Y0 + 96, left = x0 > 760;
+      pV.set(TX.lbl.speed(c)); pV.move(left ? x0 - 18 - pV.width() / 2 : x0 + 18 + pV.width() / 2, yv);
+      vArrow.setAttribute('d', arrow1D(x0 - 8, yv, x0 + 8, yv, 7));
     }
     const showL = st >= 2 && k < 2 && tp - (k + 1) * T >= 0 && cr(k + 1) > XS + 20;
     [lGuide, lArrow].forEach(e => e.style.display = showL ? '' : 'none'); pL.show(showL);
@@ -194,21 +197,21 @@
       lArrow.setAttribute('d', arrowD(xb, yl, xa, yl, Math.min(9, (xa - xb) / 3)));
       lGuide.setAttribute('d', `M${f1(xa)} ${f1(yl - 6)} V${f1(ya - 4)} M${f1(xb)} ${f1(yl - 6)} V${f1(yb - 4)}`);
       Lkm = (xa - xb) / PXKM;
-      pL.set(TX.lbl.length(Lkm)); pL.move((xa + xb) / 2, yl - 18);
+      pL.set(TX.lbl.length(Lkm)); pL.move((xa + xb) / 2, yl - 21);
       // 파고: 파봉 k 와 바로 뒤 파저(k + ½) 의 높이 차
       const xt = xAtTau(tp - (k + .5) * T), yt = Y0 - eta(xt, t);
       hLines.setAttribute('d', `M${f1(xt - 10)} ${f1(ya)} H${f1(xa + 10)} M${f1(xt - 10)} ${f1(yt)} H${f1(xa + 10)}`);
       const xm = (xa + xt) / 2;
       hArrow.setAttribute('d', arrowD(xm, ya, xm, yt, Math.min(8, (yt - ya) / 3)));
-      pH.move(xm - 36, (ya + yt) / 2 + 2);
+      pH.move(xm, Math.max(ya, yt) + 24);   // 파고 이름표는 파저 아래
       Hrel = (yt - ya) / (2 * A0);
     }
     [hLines, hArrow].forEach(e => e.style.display = showL ? '' : 'none'); pH.show(showL);
     /* 시계·구역 이름 */
     const realMin = Math.max(0, t - TSLIP) * SCALE / 60;
-    pClock.set(t < TSLIP ? TX.lbl.clock0 : TX.lbl.clock(realMin)); pClock.move(110, 521);
+    pClock.set(t < TSLIP ? TX.lbl.clock0 : TX.lbl.clock(realMin)); pClock.move(135, 520);
     pDeep.set(TX.lbl.deep(H)); pDeep.move(440, Math.min(Y0 + DS * Math.sqrt(H) + 26, 488));
-    pShelf.move(730, Y0 + at(dpx, 730) + 26);
+    pShelf.move(735, Y0 + 150);
     /* 배지·단계·해설·카드 */
     $('#badge2').textContent = TX.steps[st].badge;
     stepEls.forEach((li, i) => { li.classList.toggle('on', i === st); li.classList.toggle('done', i < st); const e = i < 3 ? stageT[i + 1] : TEND; li.querySelector('.st-bar i').style.width = (clamp((t - stageT[i]) / (e - stageT[i]), 0, 1) * 100).toFixed(0) + '%'; });
@@ -236,7 +239,7 @@
   function speedCard() {
     $('#v2-h').textContent = num(H) + ' m';
     $('#f2').innerHTML = TX.formula;
-    sp.innerHTML = [[TX.region[0], H], [TX.region[1], 200], [TX.region[2], 20]].map(([n, h]) => { const c = cms(h); return `<div class="spd-row"><span>${n}</span><em>${num(h)} m</em><b>${TX.ro.speedV(c)}</b></div>`; }).join('');
+    sp.innerHTML = [[TX.region[0], H], [TX.region[1], 200], [TX.region[2], HMIN]].map(([n, h]) => { const c = cms(h); return `<div class="spd-row"><span>${n}</span><em>${num(h)} m</em><b>${TX.ro.speedV(c)}</b></div>`; }).join('');
     $('#n2-speed').innerHTML = TX.noteSpeed(H);
   }
 

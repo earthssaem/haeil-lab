@@ -13,10 +13,10 @@ const TEXT = {
     windLv: ['약함', '보통', '강함', '매우 강함'],
     /* 그림 안 이름표 */
     lbl: {
-      msl: '평소 해수면', tideLine: n => `조석에 따른 수위 (${n})`, tideB: '조석', surge: '폭풍 해일',
-      segP: '기압', segW: '바람', low: p => `태풍 중심 ${p} hPa`, lowSym: '저',
-      wind: u => `해안 쪽으로 부는 바람 ${u} m/s`, push: '바닷물이 해안 쪽으로 밀려 쌓여요', air: '공기가 누르는 힘(기압)',
-      flood: '학습용 침수 범위', sea: '바다', town: '해안 저지대 마을', high: '높은 지대',
+      msl: '평소 해수면', tideLine: n => `${n} 수위`, tideB: '조석', surge: '폭풍 해일',
+      segP: '기압', segW: '바람', low: p => `중심 ${p} hPa`, lowSym: '저',
+      wind: u => `해안 쪽 바람 ${u} m/s`,
+      flood: '침수 (학습용)',
     },
     /* 해안 수위 구성 카드 */
     rowT: '조석', rowP: '기압 효과', rowW: '바람 효과', rowS: '폭풍 해일', rowF: '침수 범위(학습용)',
@@ -97,9 +97,7 @@ const TEXT = {
     min: t => `${Math.round(t)}분`,
     /* 지도 글자 */
     map: {
-      sea: '바 다', river: '하천', riverSub: '해일이 거슬러 오를 수 있어요', low: '해안 저지대', lowSub: '해발 3 m 미만',
-      mid: '주거지', midSub: '해발 3~10 m', high: '높은 지대', highSub: '해발 10 m 이상', hill: '서쪽 언덕',
-      harbor: '⚓ 항구', beach: '해변', coastRoad: '해안도로: 낮고 바다에 붙어 있음', virtual: '※ 실제 지역이 아닌 학습용 가상 지도',
+      sea: '바 다', river: '하천', low: '해안 저지대', mid: '주거지', high: '높은 지대', harbor: '⚓ 항구', beach: '해변',
       track: '태풍 진로', windS: '해안 쪽으로 부는 강한 바람', windW: '해안 쪽으로 부는 약한 바람', quake: '먼 바다 해저 지진 → 지진 해일 전파',
     },
     node: { H: '우리 집', K: '하구 다리 동쪽', W: '하구 다리 서쪽', M: '마을 회관', Cb: '해변', A: '중앙로 사거리', Ue: '윗다리 동쪽', Uw: '윗다리 서쪽', W2: '서쪽 주거지', V: '튼튼한 5층 건물', B: '언덕 아래 갈림길', D: '언덕 중턱', P: '언덕 위 학교', C1: '해안도로 입구', Hb: '항구', C2: '해안도로 동쪽', C3: '동쪽 언덕길 입구' },
@@ -110,19 +108,14 @@ const TEXT = {
       H: e => `출발 · 해발 약 ${e} m`, P: e => `지정 대피 장소 · 해발 약 ${e} m`,
       V: e => `철근 콘크리트 · 3층 이상 이용 · 해발 약 ${e} m`, M: e => `단층 · 해안 저지대 · 해발 약 ${e} m`,
     },
-    placeSubMap: { H: e => `해발 약 ${e} m`, P: e => `지정 대피 장소 · 해발 약 ${e} m`, V: e => `3층 이상 이용 · 해발 약 ${e} m`, M: e => `단층 · 해발 약 ${e} m` },
+    placeMap: (n, e) => `${n} · ${e} m`,
     placeIcon: { P: '▲', V: '▥', M: '⌂' },
     legend: [
-      ['<svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="3" fill="#9CCBE6" stroke="#24303A"/></svg>', '바다·하천'],
       ['<svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="3" fill="#F1E2B0" stroke="#24303A"/></svg>', '해발 3 m 미만'],
       ['<svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="3" fill="#DCE9C4" stroke="#24303A"/></svg>', '3~10 m'],
       ['<svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="3" fill="#C3D69C" stroke="#24303A"/></svg>', '10 m 이상'],
-      ['<svg viewBox="0 0 26 16"><path d="M1 12 Q8 2 14 9 T25 5" stroke="#60704E" stroke-width="2" fill="none"/></svg>', '등고선(3·10·20·30 m)'],
+      ['<svg viewBox="0 0 26 16"><path d="M1 12 Q8 2 14 9 T25 5" stroke="#60704E" stroke-width="2" fill="none"/></svg>', '등고선 (3·10·20·30 m)'],
       ['<svg viewBox="0 0 26 16"><path d="M2 8H24" stroke="#24303A" stroke-width="8" stroke-linecap="round"/><path d="M2 8H24" stroke="#F6D9A0" stroke-width="5" stroke-linecap="round"/><path d="M2 8H24" stroke="#B9744A" stroke-width="1.2" stroke-dasharray="4 3"/></svg>', '해안도로'],
-      ['<svg viewBox="0 0 26 16"><path d="M2 8H24" stroke="#24303A" stroke-width="7" stroke-linecap="round"/><path d="M2 8H24" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="13" cy="8" r="3.5" fill="#fff" stroke="#24303A" stroke-width="1.8"/></svg>', '도로·갈림길'],
-      ['<svg viewBox="0 0 26 16"><path d="M13 1 L22 15 H4 Z" fill="#3FA36B" stroke="#24303A" stroke-width="1.5"/></svg>', '지정 대피 장소'],
-      ['<svg viewBox="0 0 26 16"><rect x="8" y="1" width="10" height="14" fill="#E9EEF2" stroke="#24303A" stroke-width="1.5"/><path d="M10 5H16M10 9H16" stroke="#24303A"/></svg>', '튼튼한 건물'],
-      ['<svg viewBox="0 0 26 16"><path d="M5 15 V8 L13 2 L21 8 V15 Z" fill="#F2B233" stroke="#24303A" stroke-width="1.5"/></svg>', '단층 건물'],
       ['<svg viewBox="0 0 26 16"><defs><pattern id="lgf" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#7FB0D6"/><rect width="2" height="5" fill="#14509F"/></pattern></defs><rect x="1" y="1" width="24" height="14" rx="3" fill="url(#lgf)"/></svg>', '학습용 침수 범위'],
       ['<svg viewBox="0 0 26 16"><rect x="1" y="1" width="24" height="14" rx="3" fill="#F7C8BC"/><path d="M1 4H25M1 8H25M1 12H25" stroke="#E8553E" stroke-width="1.5"/></svg>', '월파 위험(강풍)'],
     ],
