@@ -204,14 +204,31 @@
       const i = y * W + x, e = EL[i];
       let c = RV[i] === 2 ? [125, 184, 222] : COL[CLS(e)];
       if (e < 0) { const k = clamp((y - coastY(x)) / 120, 0, 1); c = [lerp(156, 120, k), lerp(203, 175, k), lerp(230, 214, k)]; }
-      // 등고선 (3·10·20·30 m): 이웃 화소와 등급이 다르면 진하게
-      if (e >= 0 && RV[i] !== 2 && x > 0 && y > 0) {
-        const lv = v => v < 3 ? 0 : v < 10 ? 1 : v < 20 ? 2 : v < 30 ? 3 : 4;
-        if (lv(e) !== lv(EL[i - 1]) || lv(e) !== lv(EL[i - W])) c = EL[i - 1] < 0 || EL[i - W] < 0 ? c : [96, 112, 78];
-      }
       const o = i * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
+    /* 등고선 (3·10·20·30 m): 4 px 격자에서 선분을 보간해 매끈한 선으로 (marching squares) */
+    const S4 = 4, gw = W / S4 + 1, gh = Math.floor(H / S4) + 1, ev = (gx, gy) => EL[Math.min(H - 1, gy * S4) * W + Math.min(W - 1, gx * S4)];
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const L of [3, 10, 20, 30]) {
+      ctx.beginPath();
+      for (let gy = 0; gy < gh - 1; gy++) for (let gx = 0; gx < gw - 1; gx++) {
+        const v = [ev(gx, gy), ev(gx + 1, gy), ev(gx + 1, gy + 1), ev(gx, gy + 1)];
+        if (v.some(q => q < 0)) continue;
+        if (RV[Math.min(H - 1, gy * S4) * W + gx * S4] === 2) continue;
+        const P = [[gx, gy], [gx + 1, gy], [gx + 1, gy + 1], [gx, gy + 1]], pts = [];
+        for (let k = 0; k < 4; k++) {
+          const a0 = v[k], a1 = v[(k + 1) % 4];
+          if ((a0 < L) !== (a1 < L)) { const f = (L - a0) / (a1 - a0), p0 = P[k], p1 = P[(k + 1) % 4]; pts.push([(p0[0] + (p1[0] - p0[0]) * f) * S4, (p0[1] + (p1[1] - p0[1]) * f) * S4]); }
+        }
+        for (let k = 0; k + 1 < pts.length; k += 2) { ctx.moveTo(pts[k][0], pts[k][1]); ctx.lineTo(pts[k + 1][0], pts[k + 1][1]); }
+      }
+      ctx.strokeStyle = 'rgba(86,104,66,.75)'; ctx.lineWidth = L === 10 ? 2 : 1.3; ctx.stroke();
+    }
+    /* 해안선·하천 둑 */
+    ctx.beginPath(); for (let x = 0; x <= W; x += 3) { const y = coastY(x); x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = 'rgba(36,48,58,.55)'; ctx.lineWidth = 2; ctx.stroke();
+    for (const sgn of [-1, 1]) { ctx.beginPath(); for (let y = 0; y <= 450; y += 4) { const x = riverX(y) + sgn * riverW(y); y ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
   })();
   /* 침수(학습용) 층: 반 해상도 캔버스에 줄무늬 */
   const fcv = document.createElement('canvas'); fcv.width = W / 2; fcv.height = H / 2; fcv.className = 'flood'; stage.insertBefore(fcv, svg);
@@ -237,10 +254,7 @@
   const gScn = E('g'), gRoad = E('g'), gTime = E('g'), gRoute = E('g'), gRes = E('g'), gNode = E('g'), gLab = E('g'), gMark = E('g');
   svg.append(gScn, gRoad, gRoute, gRes, gTime, gNode, gLab, gMark);
   const polyD = pts => pts.map((p, j) => (j ? 'L' : 'M') + f1(p.x) + ' ' + f1(p.y)).join('');
-  /* 집(주거지 표시)·항구 방파제 */
-  [[520, 330], [612, 300], [540, 230], [588, 248], [375, 340], [395, 282], [330, 345], [640, 230], [700, 300], [660, 302], [742, 300], [525, 290]].forEach(([x, y]) => {
-    gRoad.appendChild(E('rect', { x: x - 6, y: y - 5, width: 12, height: 10, fill: '#FFFDF8', stroke: '#7B8792', 'stroke-width': 1.5 }));
-  });
+  /* 항구 방파제 */
   gRoad.appendChild(E('path', { d: 'M640 425 L652 455 M760 420 L748 452', stroke: '#7B8792', 'stroke-width': 6, 'stroke-linecap': 'round' }));
   /* 도로 */
   ROADS.forEach(r => {
@@ -252,20 +266,16 @@
       const mid = r.samples.filter(s => inRiver(s.x, s.y)); if (mid.length) { const a = mid[0], b = mid[mid.length - 1]; gRoad.appendChild(E('path', { d: `M${f1(a.x - 4)} ${f1(a.y)} L${f1(b.x + 4)} ${f1(b.y)}`, stroke: '#8A8276', 'stroke-width': 13, 'stroke-linecap': 'butt' })); gRoad.appendChild(E('path', { d: `M${f1(a.x - 4)} ${f1(a.y)} L${f1(b.x + 4)} ${f1(b.y)}`, stroke: '#FFFFFF', 'stroke-width': 6 })); }
     }
     // 걸리는 시간(분) 표시 — 경로를 고를 때만 보임
-    const m = along(r.pts, r.seg, r.L, .5), tg = E('g', { transform: `translate(${f1(m.x)},${f1(m.y)})` }, [E('rect', { x: -15, y: -9, width: 30, height: 18, rx: 9, fill: '#FFFDF8', stroke: INK, 'stroke-width': 1.5 }), E('text', { y: 5, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 13, fill: INK, text: TX.min(r.t) })]);
+    const m = along(r.pts, r.seg, r.L, .5), tg = E('g', { transform: `translate(${f1(m.x)},${f1(m.y)})` }, [E('rect', { x: -18, y: -11, width: 36, height: 22, rx: 11, fill: '#FFFDF8', stroke: INK, 'stroke-width': 2 }), E('text', { y: 5.5, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 15, fill: INK, text: TX.min(r.t) })]);
     r.tag = tg; gTime.appendChild(tg);
   });
   /* 이름표 (지도 글자) */
   const lab = (x, y, text, o = {}) => { const t = E('text', { x, y, 'text-anchor': o.anchor || 'middle', 'font-family': o.font || 'Jua', 'font-size': o.fs || 15, fill: o.color || INK, 'paint-order': 'stroke', stroke: o.halo || 'rgba(255,253,248,.9)', 'stroke-width': o.hw ?? 4, 'stroke-linejoin': 'round', text }); gLab.appendChild(t); return t; };
-  lab(150, 500, TX.map.sea, { fs: 22, color: '#1E5A85', halo: 'rgba(200,228,244,.8)' });
-  lab(486, 150, TX.map.river, { fs: 15, color: '#1E5A85' }); lab(486, 168, TX.map.riverSub, { fs: 11.5, font: 'Noto Sans KR', color: '#1E5A85' });
-  lab(240, 430, TX.map.low, { fs: 14 }); lab(240, 446, TX.map.lowSub, { fs: 11.5, font: 'Noto Sans KR' });
-  lab(250, 300, TX.map.mid, { fs: 14 }); lab(250, 316, TX.map.midSub, { fs: 11.5, font: 'Noto Sans KR' });
-  lab(640, 140, TX.map.high, { fs: 14 }); lab(640, 156, TX.map.highSub, { fs: 11.5, font: 'Noto Sans KR' });
-  lab(150, 80, TX.map.hill, { fs: 13 });
-  lab(705, 440, TX.map.harbor, { fs: 14 }); lab(565, 462, TX.map.beach, { fs: 13 });
-  lab(930, 462, TX.map.coastRoad, { fs: 12, anchor: 'end', font: 'Noto Sans KR', halo: 'rgba(200,228,244,.85)' });
-  [['3 m', 330, 372], ['10 m', 540, 196], ['20 m', 760, 240]].forEach(([s, x, y]) => lab(x, y, s, { fs: 11, font: 'Noto Sans KR', color: '#4F5E3E' }));
+  lab(150, 505, TX.map.sea, { fs: 26, color: '#1E5A85', halo: 'rgba(200,228,244,.8)' });
+  lab(488, 160, TX.map.river, { fs: 17, color: '#1E5A85' });
+  lab(165, 436, TX.map.low, { fs: 16 }); lab(250, 300, TX.map.mid, { fs: 16 }); lab(640, 140, TX.map.high, { fs: 16 });
+  lab(705, 445, TX.map.harbor, { fs: 16 }); lab(565, 465, TX.map.beach, { fs: 15 });
+  [['3 m', 318, 368], ['10 m', 540, 196], ['20 m', 760, 240]].forEach(([s, x, y]) => lab(x, y, s, { fs: 13, font: 'Noto Sans KR', color: '#4F5E3E' }));
   /* 장소: 우리 집·대피 장소 후보 (기호 + 글자) */
   const shelterG = {};
   function placeIcon(n) {
@@ -278,11 +288,11 @@
   }
   ['H', ...SHELTERS].forEach(id => { shelterG[id] = placeIcon(NODES[id]); });
   const placeLab = {
-    H: [NODES.H.x - 16, NODES.H.y - 18, 'end'], P: [NODES.P.x + 4, NODES.P.y - 24, 'middle'], V: [NODES.V.x + 18, NODES.V.y - 4, 'start'], M: [NODES.M.x, NODES.M.y - 22, 'middle'],
+    H: [NODES.H.x - 14, NODES.H.y - 16, 'end'], P: [NODES.P.x, NODES.P.y - 26, 'middle'], V: [NODES.V.x + 18, NODES.V.y - 6, 'start'], M: [NODES.M.x - 16, NODES.M.y + 24, 'end'],
   };
   for (const id in placeLab) {
     const [x, y, a] = placeLab[id], n = NODES[id];
-    lab(x, y, TX.place[id], { fs: 14, anchor: a }); lab(x, y + 14, TX.placeSubMap[id](Math.round(n.e)), { fs: 11, anchor: a, font: 'Noto Sans KR' });
+    lab(x, y, TX.placeMap(TX.place[id], Math.round(n.e)), { fs: 16, anchor: a });
   }
   /* 갈림길 점 (경로 고르기) */
   const nodeEls = {};
@@ -306,12 +316,12 @@
         const len = strong ? 34 : 18;
         gScn.appendChild(E('path', { d: arrow1D(x, y, x + len * .35, y - len, strong ? 9 : 7), stroke: '#1F9E8F', 'stroke-width': strong ? 5 : 3, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
       });
-      const t1 = E('text', { x: 300, y: 536, 'font-family': 'Jua', 'font-size': 13, fill: '#C7432E', text: TX.map.track }); gScn.appendChild(t1);
-      const t2 = E('text', { x: 640, y: 492, 'font-family': 'Jua', 'font-size': 13, fill: '#14695F', text: strong ? TX.map.windS : TX.map.windW }); gScn.appendChild(t2);
+      const t1 = E('text', { x: 296, y: 532, 'font-family': 'Jua', 'font-size': 15, fill: '#C7432E', text: TX.map.track }); gScn.appendChild(t1);
+      const t2 = E('text', { x: 640, y: 500, 'font-family': 'Jua', 'font-size': 15, fill: '#14695F', text: strong ? TX.map.windS : TX.map.windW }); gScn.appendChild(t2);
     } else {
       gScn.appendChild(E('path', { d: 'M920 548 l6 -14 l-15 0 l12 -9 l-5 -14 l12 9 l12 -9 l-5 14 l12 9 l-15 0 Z', fill: '#FFE082', stroke: INK, 'stroke-width': 2 }));
       [60, 120, 180].forEach(r => gScn.appendChild(E('path', { d: `M${926 - r} 540 A${r} ${r * .5} 0 0 1 ${Math.min(960, 926 + r)} ${540 - r * .5 + (926 + r > 960 ? 30 : 0)}`, stroke: '#2B6CB0', 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '8 6', opacity: .8 })));
-      gScn.appendChild(E('text', { x: 885, y: 530, 'text-anchor': 'end', 'font-family': 'Jua', 'font-size': 13, fill: '#1E5A85', 'paint-order': 'stroke', stroke: 'rgba(200,228,244,.85)', 'stroke-width': 4, text: TX.map.quake }));
+      gScn.appendChild(E('text', { x: 885, y: 530, 'text-anchor': 'end', 'font-family': 'Jua', 'font-size': 15, fill: '#1E5A85', 'paint-order': 'stroke', stroke: 'rgba(200,228,244,.85)', 'stroke-width': 4, text: TX.map.quake }));
     }
   }
 
@@ -358,6 +368,10 @@
     drawScenario(); drawPath();
     const showTimes = G.step === 2 && G.sub === 'route';
     gTime.style.display = showTimes ? '' : 'none';
+    if (showTimes) {   // 걸리는 시간은 지금 고를 수 있는 길과 이미 고른 길에만 표시
+      const last = G.path[G.path.length - 1], onPath = new Set(); for (let j = 1; j < G.path.length; j++) onPath.add(roadOf(G.path[j - 1], G.path[j]));
+      ROADS.forEach(r => { const next = !routeDone() && (r.a === last || r.b === last) && !G.path.includes(r.a === last ? r.b : r.a); r.tag.style.display = next || onPath.has(r) ? '' : 'none'; });
+    }
     marker.style.display = G.step >= 3 ? '' : 'none'; warn.style.display = 'none';
     if (G.step < 3) { paintFlood(null); drawResult(null); clock.hidden = true; const s = NODES.H; marker.setAttribute('transform', `translate(${s.x},${s.y})`); }
     hits();

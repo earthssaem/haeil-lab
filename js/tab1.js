@@ -24,58 +24,49 @@
   const cur = { T: TIDES.high, P: 0, W: 0 };   // 그림에 보이는 값 (목표값을 부드럽게 따라감)
   const target = () => ({ T: TIDES[S.tide], P: S.pOn ? (P0 - S.p) / 100 : 0, W: S.wOn ? WMAX * Math.pow(S.u / 40, 2) : 0 });
 
-  /* ---- 그리기 층 ---- */
+  /* ---- 그리기 층 (그림 속 표시는 핵심만 크게: 수치·설명은 오른쪽 카드와 해설 카드) ---- */
   const sky = E('rect', { x: -10, y: -10, width: 980, height: 560, fill: '#BFE3F5' }); svg.appendChild(sky);
-  const cloud = E('path', { d: 'M300 70 a30 30 0 0 1 58 -16 a36 36 0 0 1 70 8 a24 24 0 0 1 6 46 l-130 0 a26 26 0 0 1 -4 -38 Z M640 50 a22 22 0 0 1 44 -12 a28 28 0 0 1 54 6 a18 18 0 0 1 4 36 l-100 0 a20 20 0 0 1 -2 -30 Z', fill: '#EEF2F5', stroke: INK, 'stroke-width': 3 });
-  svg.appendChild(cloud);
   const landP = E('path', { fill: '#E6C377', stroke: INK, 'stroke-width': 3, 'stroke-linejoin': 'round' });
-  const bedP = E('path', { fill: '#C9A86A' });
-  svg.append(bedP, landP);
-  /* 집: 낮은 땅(저지대 마을) 3채 · 높은 지대 1채 */
+  svg.append(landP);
+  /* 집: 낮은 땅(해안 마을) 3채 · 높은 지대 1채 */
   const houses = E('g'); svg.appendChild(houses);
   [[790, 26], [832, 30], [868, 24], [938, 28]].forEach(([x, w]) => {
     const g = z(x), y = yOf(g);
     houses.appendChild(E('path', { d: `M${x - w / 2} ${y} V${y - w * .8} L${x} ${y - w * 1.35} L${x + w / 2} ${y - w * .8} V${y} Z`, fill: '#FFFDF8', stroke: INK, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
-    houses.appendChild(E('rect', { x: x - 4, y: y - 12, width: 8, height: 12, fill: '#8A8276' }));
   });
-  const water = E('path', { fill: '#2E7DB0', 'fill-opacity': .82, stroke: INK, 'stroke-width': 3, 'stroke-linejoin': 'round' });
+  const water = E('path', { fill: '#2E7DB0', 'fill-opacity': .85, stroke: INK, 'stroke-width': 3, 'stroke-linejoin': 'round' });
   svg.appendChild(water);
-  /* 기압: 공기가 수면을 누르는 화살표 (길이 ∝ 그 자리의 기압) */
+  /* 기압: 공기가 수면을 누르는 화살표 5개 (길이 ∝ 그 자리의 기압 → 태풍 중심에 가까울수록 짧음) */
   const pressG = E('g'); svg.appendChild(pressG);
-  const PX = []; for (let x = 140; x <= 600; x += 66) PX.push(x);
-  const pArrows = PX.map(() => { const a = E('path', { stroke: '#5A6B7A', 'stroke-width': 3.5, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); pressG.appendChild(a); return a; });
-  /* 바람: 해안 쪽(오른쪽)으로 부는 화살표 두 줄 + 물속 해수 이동 화살표 */
+  const PX = [130, 230, 330, 430, 530];
+  const pArrows = PX.map(() => { const a = E('path', { stroke: '#6B7C8A', 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); pressG.appendChild(a); return a; });
+  /* 바람: 해안 쪽(오른쪽)으로 부는 화살표 한 줄 */
   const windG = E('g'); svg.appendChild(windG);
-  const wArrows = []; for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { const a = E('path', { stroke: WIND, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); windG.appendChild(a); wArrows.push({ a, r, i }); }
-  const flowG = E('g'); svg.appendChild(flowG);
-  const fArrows = [0, 1, 2].map(() => { const a = E('path', { stroke: '#E6F4F2', 'stroke-width': 3, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); flowG.appendChild(a); return a; });
+  const wArrows = [0, 1, 2, 3].map(() => { const a = E('path', { stroke: WIND, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); windG.appendChild(a); return a; });
   /* 기준선: 평소 해수면(점선, 고정) · 조석 수위(긴 점선) */
-  const mslL = E('line', { x1: 0, x2: 960, y1: Y0, y2: Y0, stroke: INK, 'stroke-width': 2.5, 'stroke-dasharray': '3 6', 'stroke-linecap': 'round' });
-  const tideL = E('line', { x1: 0, x2: 960, stroke: TIDE, 'stroke-width': 3, 'stroke-dasharray': '14 8' });
+  const mslL = E('line', { x1: 0, x2: 960, y1: Y0, y2: Y0, stroke: INK, 'stroke-width': 3, 'stroke-dasharray': '2 7', 'stroke-linecap': 'round' });
+  const tideL = E('line', { x1: 0, x2: 960, stroke: TIDE, 'stroke-width': 3, 'stroke-dasharray': '16 9' });
   svg.append(tideL, mslL);
-  /* 해안 수위 막대 */
+  /* 해안 수위 막대: 조석 · 기압 · 바람을 색으로 쌓음 (색은 오른쪽 '해안 수위 구성' 카드와 같음) */
   const gauge = E('g'); svg.appendChild(gauge);
-  gauge.appendChild(E('rect', { x: XG - 3, y: Y0 - 175, width: 6, height: 235, fill: '#FFFDF8', stroke: INK, 'stroke-width': 2 }));
-  for (let m = -1; m <= 3; m++) gauge.appendChild(E('line', { x1: XG - 9, x2: XG + 9, y1: yOf(m), y2: yOf(m), stroke: INK, 'stroke-width': m ? 1.5 : 2.5 }));
-  const segT = E('rect', { x: XG + 6, width: 16, fill: TIDE, stroke: INK, 'stroke-width': 1.5 });
-  const segP = E('rect', { x: XG + 6, width: 16, fill: PRES, stroke: INK, 'stroke-width': 1.5 });
-  const segW = E('rect', { x: XG + 6, width: 16, fill: WIND, stroke: INK, 'stroke-width': 1.5 });
-  const brT = E('path', { stroke: TIDE, 'stroke-width': 3, fill: 'none' }), brS = E('path', { stroke: '#C7432E', 'stroke-width': 3, fill: 'none' });
-  const topMark = E('path', { fill: '#C7432E', stroke: INK, 'stroke-width': 1.5 });
-  gauge.append(segT, segP, segW, brT, brS, topMark);
+  const BW = 30;
+  gauge.appendChild(E('line', { x1: XG + BW / 2, x2: XG + BW / 2, y1: Y0 - 170, y2: Y0 + 60, stroke: INK, 'stroke-width': 2, opacity: .5 }));
+  const segT = E('rect', { x: XG, width: BW, fill: TIDE, stroke: INK, 'stroke-width': 2 });
+  const segP = E('rect', { x: XG, width: BW, fill: PRES, stroke: INK, 'stroke-width': 2 });
+  const segW = E('rect', { x: XG, width: BW, fill: WIND, stroke: INK, 'stroke-width': 2 });
+  const brT = E('path', { stroke: TIDE, 'stroke-width': 3.5, fill: 'none' }), brS = E('path', { stroke: '#C7432E', 'stroke-width': 3.5, fill: 'none' });
+  gauge.append(segT, segP, segW, brT, brS);
+  const segTxt = k => E('text', { x: XG + BW / 2, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 13, fill: '#fff', text: k });
+  const tP = segTxt(TX.lbl.segP), tW = segTxt(TX.lbl.segW); gauge.append(tP, tW);
   /* 이름표 */
   const labG = E('g'); svg.appendChild(labG);
-  const pMSL = pill(TX.lbl.msl, { fs: 15, pad: 8 }), pTide = pill('', { fs: 15, pad: 8, color: '#fff', bg: TIDE });
-  const pSurge = pill(TX.lbl.surge, { fs: 15, pad: 8, color: '#fff', bg: '#C7432E' }), pTideB = pill(TX.lbl.tideB, { fs: 15, pad: 8, color: '#fff', bg: TIDE });
-  const pLow = pill('', { fs: 16, pad: 9 }), pWind = pill('', { fs: 15, pad: 8, color: '#fff', bg: WIND }), pPush = pill(TX.lbl.push, { fs: 14, pad: 7 });
-  const pAir = pill(TX.lbl.air, { fs: 14, pad: 7 }), pFlood = pill(TX.lbl.flood, { fs: 14, pad: 7, bg: '#FFE082' });
-  const pSea = pill(TX.lbl.sea, { fs: 16, pad: 8 }), pTown = pill(TX.lbl.town, { fs: 14, pad: 7 }), pHigh = pill(TX.lbl.high, { fs: 14, pad: 7 });
-  const tP = E('text', { 'font-family': 'Jua', 'font-size': 13, fill: INK, text: TX.lbl.segP }), tW = E('text', { 'font-family': 'Jua', 'font-size': 13, fill: INK, text: TX.lbl.segW });
-  const lowMark = E('g', {}, [E('circle', { r: 19, fill: '#E8553E', stroke: INK, 'stroke-width': 3 }), E('text', { y: 7, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 20, fill: '#fff', text: TX.lbl.lowSym })]);
-  lowMark.setAttribute('transform', `translate(${XC},40)`);
-  labG.append(lowMark, ...[pMSL, pTide, pTideB, pSurge, pLow, pWind, pPush, pAir, pFlood, pSea, pTown, pHigh].map(p => p.g), tP, tW);
-  pSea.move(110, 420); pTown.move(830, yOf(2.4) + 26); pHigh.move(925, yOf(5.6) + 30);
-  pLow.move(XC, 80);
+  const FS = 17;
+  const pMSL = pill(TX.lbl.msl, { fs: FS }), pTide = pill('', { fs: FS, color: '#fff', bg: TIDE });
+  const pSurge = pill(TX.lbl.surge, { fs: FS, color: '#fff', bg: '#C7432E' }), pTideB = pill(TX.lbl.tideB, { fs: FS, color: '#fff', bg: TIDE });
+  const pLow = pill('', { fs: FS }), pWind = pill('', { fs: FS, color: '#fff', bg: WIND }), pFlood = pill(TX.lbl.flood, { fs: FS, bg: '#FFE082' });
+  const lowMark = E('g', {}, [E('circle', { r: 21, fill: '#E8553E', stroke: INK, 'stroke-width': 3 }), E('text', { y: 7, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 22, fill: '#fff', text: TX.lbl.lowSym })]);
+  lowMark.setAttribute('transform', `translate(${XC},44)`);
+  labG.append(lowMark, ...[pMSL, pTide, pTideB, pSurge, pLow, pWind, pFlood].map(p => p.g));
 
   let tt = 0;
   const setCap = explainCard($('#ex1'));
@@ -87,11 +78,11 @@
     const eta = x => T + P * gP(x) + W * gW(x);
     /* 수면이 땅과 만나는 곳 (해안선, 침수되면 육지 안쪽으로) */
     let xEnd = 600; while (xEnd < 975 && z(xEnd) < eta(xEnd)) xEnd += 1;
-    /* 수면: 작은 잔물결만 (큰 파도가 아니라 해수면 자체가 높아지는 것을 보이도록) */
-    const ra = .8 + (S.wOn ? S.u : 0) * .05;
+    /* 수면: 아주 작은 잔물결만 (큰 파도가 아니라 해수면 자체가 높아지는 것을 보이도록) */
+    const ra = .6 + (S.wOn ? S.u : 0) * .04;
     let d = '', back = '';
     for (let x = -10; x < xEnd; x += 5) {
-      const r = ra * Math.sin((x - tt * 26) / 34 * 2 * Math.PI) * clamp((640 - x) / 80, 0, 1);
+      const r = ra * Math.sin((x - tt * 26) / 40 * 2 * Math.PI) * clamp((640 - x) / 80, 0, 1);
       d += (d ? 'L' : 'M') + x + ' ' + f1(yOf(eta(x)) - r);
     }
     d += `L${xEnd} ${f1(yOf(eta(xEnd)))}`;
@@ -100,59 +91,54 @@
     /* 땅·해저 */
     if (!landP.getAttribute('d')) {
       let l = ''; for (let x = -20; x <= 980; x += 10) l += (l ? 'L' : 'M') + x + ' ' + f1(yOf(z(x)));
-      landP.setAttribute('d', l + 'L980 560L-20 560Z'); bedP.setAttribute('d', l + 'L980 560L-20 560Z');
+      landP.setAttribute('d', l + 'L980 560L-20 560Z');
     }
     /* 하늘: 기압이 낮을수록 어둡게 */
     const dark = clamp((P0 - S.p) / 83, 0, 1) * .55 + (S.u / 40) * .25;
     sky.setAttribute('fill', `rgb(${Math.round(lerp(191, 150, dark))},${Math.round(lerp(227, 172, dark))},${Math.round(lerp(245, 190, dark))})`);
     /* 기압 화살표 */
-    pressG.style.display = S.pOn ? '' : 'none'; pAir.show(S.pOn);
-    PX.forEach((x, i) => { const p = P0 - (P0 - S.p) * gP(x), len = 12 + (p - 925) * .42, ys = yOf(eta(x)) - 8; pArrows[i].setAttribute('d', arrow1D(x, ys - len, x, ys, 8)); });
-    if (S.pOn) pAir.move(210, yOf(eta(140)) - 70);
+    pressG.style.display = S.pOn ? '' : 'none';
+    PX.forEach((x, i) => { const p = P0 - (P0 - S.p) * gP(x), len = 14 + (p - 925) * .45, ys = yOf(eta(x)) - 10; pArrows[i].setAttribute('d', arrow1D(x, ys - len, x, ys, 9)); });
     /* 바람 화살표 (바람 효과를 끄면 숨김) */
     const wOn = S.wOn && S.u > 0;
-    windG.style.display = flowG.style.display = wOn ? '' : 'none'; pWind.show(wOn); pPush.show(wOn && S.u >= 8);
+    windG.style.display = wOn ? '' : 'none'; pWind.show(wOn);
     if (wOn) {
-      const len = 26 + S.u * 2.3, sw = 2.5 + S.u / 9, sp = 100, v = 30 + S.u * 4;
-      wArrows.forEach(({ a, r, i }) => {
-        let x = 40 + i * sp + r * 50 + ((tt * v) % sp); const y = r ? 168 : 120;
-        if (x > 600) x -= sp * 6;
-        const op = clamp((x + len - 20) / 60, 0, 1) * clamp((640 - x - len) / 60, 0, 1);
-        attr(a, { d: arrow1D(x, y, x + len, y, 6 + S.u / 5), 'stroke-width': f1(sw), opacity: f1(op) });
+      const len = 36 + S.u * 1.6, sw = 3 + S.u / 8, sp = 135, v = 30 + S.u * 3, y = 150;
+      wArrows.forEach((a, i) => {
+        let x = 80 + i * sp + ((tt * v) % sp); if (x > 80 + sp * 3.6) x -= sp * 4;
+        const op = clamp((x - 60) / 50, 0, 1) * clamp((620 - x - len) / 50, 0, 1);
+        attr(a, { d: arrow1D(x, y, x + len, y, 8 + S.u / 5), 'stroke-width': f1(sw), opacity: f1(op) });
       });
-      pWind.set(TX.lbl.wind(S.u)); pWind.move(170, 82);
-      fArrows.forEach((a, i) => { const x = 330 + i * 95, y = yOf(eta(x)) + 26, l = 14 + S.u * 1.1; a.setAttribute('d', arrow1D(x, y, x + l, y, 7)); });
-      pPush.move(430, yOf(eta(430)) + 58);
+      pWind.set(TX.lbl.wind(S.u)); pWind.move(190, 108);
     }
-    /* 기준선과 이름표 */
+    /* 기준선과 이름표 (왼쪽 가장자리에 모아 둠) */
     const yT = yOf(T);
     attr(tideL, { y1: f1(yT), y2: f1(yT) });
     const tideShown = Math.abs(TIDES[S.tide]) > .01;
     tideL.style.display = tideShown ? '' : 'none'; pTide.show(tideShown);
-    pTide.set(TX.lbl.tideLine(TX.tideName[S.tide])); pTide.move(330, yT + (T > 0 ? -16 : 16));
-    pMSL.move(70, Y0 + 18);
+    pTide.set(TX.lbl.tideLine(TX.tideName[S.tide])); pTide.move(300, yT + (T > 0 ? -20 : 20));
+    pMSL.move(80, Y0 + 22);
     /* 해안 수위 막대: 조석(평소 해수면 → 조석 수위) + 기압 + 바람 */
     const yP = yOf(T + P), yW = yOf(CL);
     attr(segT, { y: f1(Math.min(Y0, yT)), height: f1(Math.abs(Y0 - yT)) });
     attr(segP, { y: f1(yP), height: f1(Math.max(0, yT - yP)) });
     attr(segW, { y: f1(yW), height: f1(Math.max(0, yP - yW)) });
-    tP.style.display = yT - yP >= 14 ? '' : 'none'; attr(tP, { x: XG + 26, y: f1((yT + yP) / 2 + 5) });
-    tW.style.display = yP - yW >= 14 ? '' : 'none'; attr(tW, { x: XG + 26, y: f1((yP + yW) / 2 + 5) });
-    const bx = XG - 16;
+    tP.style.display = yT - yP >= 18 ? '' : 'none'; attr(tP, { y: f1((yT + yP) / 2 + 5) });
+    tW.style.display = yP - yW >= 18 ? '' : 'none'; attr(tW, { y: f1((yP + yW) / 2 + 5) });
+    const bx = XG - 10;
     brT.setAttribute('d', `M${bx + 6} ${Y0} H${bx} V${f1(yT)} H${bx + 6}`); brT.style.display = tideShown ? '' : 'none';
     const surge = yT - yW > 3;
     brS.setAttribute('d', `M${bx + 6} ${f1(yT)} H${bx} V${f1(yW)} H${bx + 6}`); brS.style.display = surge ? '' : 'none';
     pSurge.show(surge); pTideB.show(tideShown);
-    // 이름표가 겹치지 않게: 폭풍 해일은 막대 가운데, 조석은 그 아래(또는 위)로 최소 26 px 떨어뜨림
+    // 이름표가 겹치지 않게: 폭풍 해일은 막대 가운데, 조석은 그 아래(또는 위)로 최소 30 px 떨어뜨림
     let ySu = (yT + yW) / 2, yTi = (Y0 + yT) / 2;
-    if (surge && tideShown && Math.abs(ySu - yTi) < 26) yTi = ySu + (yTi >= ySu ? 26 : -26);
+    if (surge && tideShown && Math.abs(ySu - yTi) < 30) yTi = ySu + (yTi >= ySu ? 30 : -30);
     pSurge.move(bx - 8 - pSurge.width() / 2, ySu); pTideB.move(bx - 8 - pTideB.width() / 2, yTi);
-    topMark.setAttribute('d', `M${XG + 24} ${f1(yW)} l10 -7 v14 Z`);
     /* 태풍 중심(저기압) */
-    pLow.set(TX.lbl.low(S.p));
+    pLow.set(TX.lbl.low(S.p)); pLow.move(XC + 30 + pLow.width() / 2, 44);
     /* 침수 표시 */
     const flooded = xEnd > 752;
-    pFlood.show(flooded); if (flooded) pFlood.move((752 + xEnd) / 2, yOf(CL) - 20);
+    pFlood.show(flooded); if (flooded) pFlood.move((752 + xEnd) / 2, yOf(CL) - 24);
   }
 
   /* ---- 조작부·카드 (같은 상태값 S 로 갱신) ---- */
