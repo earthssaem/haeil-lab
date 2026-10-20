@@ -105,31 +105,31 @@
   </div>
 </section>
 
-<!-- ===== 탭3: 해일이 오기 전 — 대비 미니게임 ===== -->
+<!-- ===== 탭3: 해일이 오기 전 — 실시간 대피 게임 ===== -->
 <section class="panel" id="panel3">
-  <div class="lab-grid">
-    <div class="sim">
-      <div class="stage-wrap map" id="stage3">
-        <canvas id="cv3" width="960" height="540"></canvas>
-        <svg id="svg3" viewBox="0 0 960 540" preserveAspectRatio="xMidYMid meet"></svg>
-        <div class="badge" id="badge3"></div>
-        <div class="mychip" id="chip3"></div>
-        <div class="clock" id="clock3" hidden></div>
-      </div>
-      <ul class="legend" id="leg3"></ul>
-      <div id="ex3"></div>
+  <div class="game" id="game3" data-phase="calm">
+    <div class="g-hud">
+      <div class="g-time" id="g3-time" aria-live="off"><b></b><span class="g-bar"><i></i></span></div>
+      <div class="g-goal" id="g3-goal" aria-live="polite"></div>
+      <button class="btn" id="g3-pause" type="button"></button>
+      <button class="btn tog on" id="g3-sound" type="button"></button>
     </div>
-    <div class="lab-side">
-      <div class="card game">
-        <ol class="gsteps" id="gs3"></ol>
-        <div id="g3"></div>
+    <div class="g-main">
+      <div class="stage-wrap map" id="stage3">
+        <canvas id="cv3" tabindex="-1" ></canvas>
+        <div class="g-paused" id="g3-paused" hidden></div>
       </div>
-      <details class="card fold">
-        <summary><h3 id="t3-h-src"></h3></summary>
-        <div class="info" id="t3-src"></div>
-      </details>
+      <div class="card g-side" id="g3-side"></div>
     </div>
   </div>
+  <details class="card fold g-more">
+    <summary><h3 id="t3-h-leg"></h3></summary>
+    <ul class="legend" id="leg3"></ul>
+  </details>
+  <details class="card fold g-more">
+    <summary><h3 id="t3-h-src"></h3></summary>
+    <div class="info" id="t3-src"></div>
+  </details>
 </section>
 
 </main>
