@@ -69,15 +69,16 @@ function registerPauseBtn(btn) { _pauseBtns.push(btn); btn.addEventListener('cli
 function setPaused(v) { _paused = v; syncPauseBtns(); }
 
 /* ---- 전역 애니메이션 루프: 활성 탭의 frame(dt)만 호출 (탭을 바꾸면 이전 탭의 애니메이션은 멈춤 → 중복 실행 없음) ---- */
-let activeTab = '1'; const frames = {}; const tabInit = {};
+let activeTab = '1'; const frames = {}; const tabInit = {}; const tabLeave = {};   // tabLeave: 탭을 떠날 때 (게임 일시 정지·소리 끄기 등)
 let _last = performance.now();
 (function loop(now) {
   let dt = (now - _last) / 1000; _last = now; if (dt > 0.1) dt = 0.1;
   if (!_paused && frames[activeTab]) frames[activeTab](dt);
   requestAnimationFrame(loop);
 })(performance.now());
-/* 탭 전환: 탭 버튼 표시·패널 표시·활성 탭 바꾸고, 처음 여는 탭이면 tabInit 호출 */
+/* 탭 전환: 떠나는 탭의 tabLeave → 탭 버튼 표시·패널 표시·활성 탭 바꾸고, 여는 탭의 tabInit 호출 */
 function setTab(id) {
+  if (id !== activeTab && tabLeave[activeTab]) tabLeave[activeTab]();
   const b = $(`.tab[data-tab="${id}"]`);
   $$('.tab').forEach(x => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', x === b); }); b.scrollIntoView({ inline: 'center', block: 'nearest' });
   $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel' + id));

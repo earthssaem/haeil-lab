@@ -1,586 +1,501 @@
-/* 탭3: 해일이 오기 전 — 대비 미니게임 (위에서 내려다본 가상의 해안 마을 지도)
-   ① 상황 확인 → ② 대비 선택(대피 장소 → 이동 경로 → 출발 전 행동) → ③ 실행 → ④ 결과 확인 → ⑤ 다시 도전(조건 하나만 바꾸기)
-   지형: 해발 고도 함수 elev(x, y) 하나로 지도 색·등고선·건물/도로의 고도·학습용 침수 범위·판정을 모두 계산 (서로 어긋나지 않음).
-   시간: 실시간 카운트다운이 아니라 행동·이동에 걸리는 시간(분)을 쌓아 감 → 읽는 동안 불이익 없음.
-   판정: 고른 행동·경로를 시간표로 만들고, 지나는 지점마다 '그 지점이 위험해지는 시각(onset)'과 비교 (위험할 때 있었음 / 아슬아슬 / 지나간 뒤 위험해짐 / 안전).
-   지도와 침수 범위는 실제 지역이 아닌 학습용 가상 상황 */
-/* ================= 탭3: 대비 미니게임 ================= */
+/* 탭3: 해일이 오기 전 — 실시간 지진 해일 대피 게임 (위에서 내려다본 가상의 해안 마을, 지도 전체가 한 화면)
+   - 조작: 방향키·WASD / 태블릿은 지도 밖 방향 패드. 도로·광장(이동 가능 격자 WALK)에서만 움직이고 건물·물은 통과하지 못함.
+     대각선 입력은 정규화, 이동량은 프레임 시간(dt)에 비례 → 프레임 속도와 상관없이 같은 속도.
+     도로 방향과 입력 방향이 조금 달라도(비스듬한 길) 가까운 진행 가능 방향으로 미끄러지듯 따라감.
+   - 해일: 시작과 함께 바다에서 해안으로 다가오고(도달 시각 T), 해안에 닿으면 '바다와 이어진, 침수 한계 고도 L 보다 낮은 칸'으로만
+     물이 퍼짐. 칸마다 물이 닿는 시각 FT 를 다익스트라로 미리 계산(하천은 빠르게, 높을수록 느리게) → 화면 표시·이동 가능 여부·판정이 모두 FT 하나를 씀.
+     지형에 막힌 낮은 곳은 바다와 이어지지 않으면 잠기지 않음.
+   - 판정: 지정 대피 장소에 닿으면 대피 완료. 물이 닿은 칸에 들어가거나 물이 내 위치에 닿으면 멈추고 '경로를 다시 확인해 보자'.
+     해안 도달 시각이 지나도 판은 끝나지 않고, 안전한 높은 곳에 있으면 그대로 계속 이동할 수 있음.
+   - 게임용 압축 시간·단순화 모형이며 실제 침수 예측이 아님. 폭풍 해일 모드는 MODES 에 같은 형식으로 추가해 확장 */
+/* ================= 탭3: 실시간 대피 게임 ================= */
 (function () {
   const TX = TEXT.tab3;
-  const svg = $('#svg3'), cv = $('#cv3'), stage = $('#stage3');
-  const INK = '#24303A', W = 960, H = 540;
+  const W = 960, H = 540, INK = '#24303A';
+  const sm = smooth;
 
   /* ---------- 지형 (단위: px, 해발 m) ---------- */
-  const sm = smooth;
-  const coastY = x => 448 + 7 * Math.sin(x / 63) + 4 * Math.sin(x / 23 + 1) - 36 * sm(630, 665, x) * (1 - sm(760, 795, x));   // 해안선 (항구 안쪽으로 들어감)
-  const riverX = y => 460 + 18 * Math.sin(y / 80);                                                                          // 하천 중심선
-  const riverW = y => 7 + 6 * y / 450;
+  const coastY = x => 428 + 6 * Math.sin(x / 57) + 4 * Math.sin(x / 23 + 1) - 34 * sm(600, 630, x) * (1 - sm(760, 790, x));   // 해안선 (항구는 안쪽으로)
+  const riverX = y => 455 + 14 * Math.sin(y / 70 + .4);
+  const riverW = y => 8 + 6 * y / 430;
   function elev(x, y) {
     const d = coastY(x) - y;
     if (d <= 0) return -1;
-    let b = d < 80 ? .5 + 3.5 * d / 80 : d < 230 ? 4 + 6 * (d - 80) / 150 : 10 + (d - 230) * .06;
-    b += 20 * Math.exp(-((x - 830) ** 2 + (y - 150) ** 2) / (2 * 95 * 95)) + 14 * Math.exp(-((x - 140) ** 2 + (y - 110) ** 2) / (2 * 110 * 110));
+    let b = d < 70 ? .6 + 3.4 * d / 70 : d < 190 ? 4 + 6 * (d - 70) / 120 : 10 + (d - 190) * .07;
+    b += 10 * Math.exp(-((x - 120) ** 2 + (y - 100) ** 2) / (2 * 110 * 110)) + 10 * Math.exp(-((x - 860) ** 2 + (y - 110) ** 2) / (2 * 110 * 110));
     const r = Math.abs(x - riverX(y));
-    b -= Math.min(b * .45, 3.5) * Math.exp(-((r / 55) ** 2));     // 하천 주변은 골짜기처럼 낮음
+    b -= Math.min(b * .5, 4) * Math.exp(-((r / 60) ** 2));      // 하천 주변은 골짜기처럼 낮음
     return b;
   }
-  const inRiver = (x, y) => y < coastY(x) + 4 && Math.abs(x - riverX(y)) < riverW(y);
-  /* 지점의 성질: 해발 e, 해안에서의 거리 d, 하천 가까움 rv (지진 해일이 하천을 거슬러 빨리 올라옴) */
-  const pointInfo = (x, y) => ({ x, y, e: elev(x, y), d: Math.max(0, coastY(x) - y), rv: Math.abs(x - riverX(y)) < 40 });
+  const isSea = (x, y) => y >= coastY(x);
+  const inRiver = (x, y) => !isSea(x, y) && Math.abs(x - riverX(y)) < riverW(y);
 
-  /* ---------- 장소·도로 ---------- */
-  const NODES = {
-    H: { x: 548, y: 390, kind: 'start' }, K: { x: 500, y: 404 }, W: { x: 414, y: 404 }, M: { x: 345, y: 398, kind: 'shelter' },
-    Cb: { x: 565, y: 436, kind: 'beach' }, A: { x: 568, y: 300 }, Ue: { x: 502, y: 262 }, Uw: { x: 420, y: 258 }, W2: { x: 360, y: 312 },
-    V: { x: 642, y: 378, kind: 'shelter' }, B: { x: 690, y: 262 }, D: { x: 775, y: 212 }, P: { x: 850, y: 190, kind: 'shelter' },
-    C1: { x: 628, y: 422 }, Hb: { x: 700, y: 394, kind: 'harbor' }, C2: { x: 800, y: 424 }, C3: { x: 880, y: 350 },
-  };
-  for (const k in NODES) { const n = NODES[k]; n.id = k; Object.assign(n, pointInfo(n.x, n.y)); n.name = TX.node[k]; }
-  /* 도로: 양 끝·꺾이는 점·걸어서 걸리는 시간(분)·종류 (해안도로는 넓고 평평해 빠르지만 바다에 붙어 있음) */
+  /* ---------- 도로 (kind: coast 해안도로 · river 강변길 → 침수 위험 구간으로 표시 / main · upper · lane · hill) ---------- */
   const ROADS = [
-    ['H', 'K', [], 2, 'low'], ['K', 'W', [], 3, 'bridge'], ['W', 'M', [], 2, 'low'], ['H', 'Cb', [], 2, 'low'],
-    ['H', 'A', [[558, 345]], 5, 'street'], ['A', 'Ue', [[535, 275]], 3, 'street'], ['Ue', 'Uw', [], 3, 'bridge2'], ['Uw', 'W2', [[390, 290]], 3, 'street'],
-    ['W2', 'W', [[392, 360]], 4, 'street'], ['W2', 'M', [], 3, 'street'],
-    ['H', 'V', [[600, 384]], 3, 'low'], ['V', 'A', [[610, 330]], 4, 'street'],
-    ['A', 'B', [[620, 292], [650, 268]], 6, 'street'], ['B', 'D', [[740, 250], [728, 226]], 6, 'hill'], ['D', 'P', [[820, 214]], 4, 'hill'],
-    ['H', 'C1', [[590, 414]], 3, 'coast'], ['C1', 'Hb', [[660, 410]], 3, 'coast'], ['Hb', 'C2', [[770, 400]], 4, 'coast'], ['C2', 'C3', [[850, 402]], 4, 'coast'], ['C3', 'P', [[892, 280], [866, 214]], 4, 'hill'],
-  ].map(([a, b, wp, t, kind], i) => {
-    const pts = [NODES[a], ...wp.map(([x, y]) => ({ x, y })), NODES[b]];
-    let L = 0; const seg = []; for (let j = 1; j < pts.length; j++) { const l = Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y); seg.push(l); L += l; }
-    /* 6 px 마다 표본점 (위치 비율 f, 해발, 해안 거리) — 판정에 사용. 다리 위는 하천 수면이 아니라 다리 높이(양쪽 둑의 낮은 쪽)로 봄 */
-    const samples = [], n = Math.max(2, Math.ceil(L / 6));
-    for (let s = 0; s <= n; s++) {
-      const p = along(pts, seg, L, s / n), info = pointInfo(p.x, p.y);
-      if (inRiver(p.x, p.y) || info.e < 0) { info.e = Math.max(.6, Math.min(NODES[a].e, NODES[b].e) - .4); info.rv = true; }
-      info.f = s / n; samples.push(info);
-    }
-    return { i, a, b, pts, seg, L, t, kind, samples, name: TX.road[kind] };
-  });
-  function along(pts, seg, L, f) {
-    let s = f * L;
-    for (let j = 0; j < seg.length; j++) { if (s <= seg[j] || j === seg.length - 1) { const r = seg[j] ? clamp(s / seg[j], 0, 1) : 0; return { x: lerp(pts[j].x, pts[j + 1].x, r), y: lerp(pts[j].y, pts[j + 1].y, r) }; } s -= seg[j]; }
-  }
-  const roadOf = (a, b) => ROADS.find(r => (r.a === a && r.b === b) || (r.a === b && r.b === a));
-  const neighbors = a => ROADS.filter(r => r.a === a || r.b === a).map(r => r.a === a ? r.b : r.a);
-  /* 도로를 a → b 방향으로 지날 때의 표본점 (방향을 맞춤) */
-  const walkSamples = (a, b) => { const r = roadOf(a, b); return r.a === a ? r.samples : r.samples.map(s => ({ ...s, f: 1 - s.f })).reverse(); };
-
-  /* ---------- 상황(시나리오)과 조건 ---------- */
-  const SHELTERS = ['P', 'V', 'M'];
-  const G = {
-    sc: 'storm',                                   // 'storm' 폭풍 해일 | 'tsu' 지진 해일
-    cond: { storm: { tide: 'high', wind: 'strong' }, tsu: { left: 10 } },
-    changed: null,                                 // 다시 도전에서 바꾼 조건 키
-    step: 1, sub: 'shelter',                       // 단계, ②의 세부 단계 (shelter | route | act)
-    shelter: null, path: ['H'], acts: { storm: [], tsu: [] },
-    result: null, prev: null,                      // 이번 결과, 조건을 바꾸기 전 결과 (비교용)
-    anim: null,
+    { id: 'coastW', kind: 'coast', pts: [[20, 410], [200, 413], [300, 411], [405, 410]] },
+    { id: 'coastBr', kind: 'coast', bridge: true, pts: [[405, 410], [505, 410]] },
+    { id: 'coastE', kind: 'coast', pts: [[505, 410], [585, 404], [612, 374], [770, 374], [800, 404], [900, 410], [945, 410]] },
+    { id: 'mainW', kind: 'main', pts: [[20, 300], [420, 300]] },
+    { id: 'mainBr', kind: 'main', bridge: true, pts: [[420, 300], [472, 300]] },
+    { id: 'mainE', kind: 'main', pts: [[472, 300], [945, 300]] },
+    { id: 'upW', kind: 'upper', pts: [[90, 190], [430, 190]] },
+    { id: 'upBr', kind: 'upper', bridge: true, pts: [[430, 190], [482, 190]] },
+    { id: 'upE', kind: 'upper', pts: [[482, 190], [890, 190]] },
+    { id: 'hillW', kind: 'hill', pts: [[80, 410], [80, 300], [90, 190], [108, 112]] },
+    { id: 'lane2', kind: 'lane', pts: [[270, 411], [270, 300], [270, 190]] },
+    { id: 'riverW', kind: 'river', pts: [[405, 410], [405, 300], [418, 190]] },
+    { id: 'riverE', kind: 'river', pts: [[505, 410], [500, 300], [492, 190]] },
+    { id: 'lane4', kind: 'lane', pts: [[640, 374], [640, 300]] },
+    { id: 'hillE', kind: 'hill', pts: [[800, 404], [800, 300], [838, 258], [812, 226], [845, 190]] },
+    { id: 'hillC', kind: 'hill', pts: [[900, 410], [906, 330], [890, 262], [880, 190]] },
+    { id: 'school', kind: 'lane', pts: [[870, 190], [870, 120]] },
+    { id: 'bldg', kind: 'lane', pts: [[700, 300], [700, 336]], only: 'bldg' },
+  ];
+  ROADS.forEach(r => { r.name = TX.road[r.id]; });
+  const SHELTERS = {
+    park: { x: 110, y: 100, kind: 'hill' }, school: { x: 870, y: 106, kind: 'hill' }, bldg: { x: 700, y: 348, kind: 'building' },
   };
-  /* 위험이 시작되는 시각(분)을 정하는 규칙 — 학습용 단순 모형 */
-  function hazard() {
-    if (G.sc === 'storm') {
-      const c = G.cond.storm, FL = { low: -.7, high: .7 }[c.tide] + { weak: 1.0, strong: 2.6 }[c.wind], strong = c.wind === 'strong';
-      return {
-        FL, peak: 90, strong,
-        onset: p => Math.min(p.e < FL ? 60 + p.d / 15 : Infinity, strong && p.d < 35 ? 30 : Infinity),   // 해수면 상승: 최접근 30분 전부터 해안에서 안쪽으로 · 강풍 때 해안 35 px 안은 30분부터 월파
-        front: p => strong && p.d < 35,
-      };
-    }
-    const T = G.cond.tsu.left, FL = 8;
-    return { FL, peak: T, strong: false, onset: p => p.e < FL ? T + p.d / (p.rv ? 90 : 30) : Infinity, front: () => false };
-  }
-  const MARGIN = 5;   // 위험해지기 5분 전보다 늦게 지나가면 '아슬아슬'
-  /* 출발 전 행동: 걸리는 시간·다녀오는 곳 */
-  const ACTS = {
-    storm: [{ id: 'info', t: 5 }, { id: 'kit', t: 10 }, { id: 'boat', t: 20, trip: ['H', 'C1', 'Hb'] }],
-    tsu: [{ id: 'alert', t: 1 }, { id: 'pack', t: 10 }, { id: 'look', t: 5, trip: ['H', 'Cb'] }],
+  for (const k in SHELTERS) { const s = SHELTERS[k]; s.id = k; s.e = elev(s.x, s.y); s.name = TX.shelter[k]; }
+
+  /* ---------- 모드·조건 (지진 해일 먼저. 폭풍 해일은 같은 형식으로 추가) ----------
+     T: 해안 도달 시각(게임 초) · L: 침수 한계 고도(m) · start: 출발 위치 · shelters: 지정 대피 장소 · closed: 통행 금지(공사) 도로 */
+  const MODES = {
+    tsunami: {
+      levels: [
+        { id: 'p', T: 54, L: 7, start: [560, 300], shelters: ['park', 'school'], closed: [] },
+        { id: 'harbor', T: 20, L: 7.5, start: [700, 374], shelters: ['park', 'school'], closed: [] },
+        { id: 'west', T: 26, L: 7.5, start: [270, 345], shelters: ['school', 'bldg'], closed: ['mainBr'] },
+        { id: 'short', T: 19, L: 7, start: [585, 404], shelters: ['park', 'school', 'bldg'], closed: [] },
+      ],
+    },
   };
+  const MODE = MODES.tsunami;
+  const SPEED = 15;          // 걷는 속도 (px/s)
+  const PR = 6;              // 캐릭터 반지름 (그림)
 
-  /* ---------- 시간표 만들기 → 판정 ---------- */
-  function buildTimeline() {
-    const tl = []; let t = 0;
-    const walk = (a, b, cat, label) => { const r = roadOf(a, b); tl.push({ type: 'walk', a, b, road: r, t0: t, t1: t + r.t, cat, label }); t += r.t; };
-    for (const ac of ACTS[G.sc]) {
-      if (!G.acts[G.sc].includes(ac.id)) continue;
-      if (ac.trip) {
-        for (let j = 1; j < ac.trip.length; j++) walk(ac.trip[j - 1], ac.trip[j], 'act', ac.id);
-        const at = NODES[ac.trip[ac.trip.length - 1]]; tl.push({ type: 'stay', node: at, t0: t, t1: t + ac.t, cat: 'act', label: ac.id }); t += ac.t;
-        for (let j = ac.trip.length - 1; j > 0; j--) walk(ac.trip[j], ac.trip[j - 1], 'act', ac.id);
-      } else { tl.push({ type: 'stay', node: NODES.H, t0: t, t1: t + ac.t, cat: 'act', label: ac.id }); t += ac.t; }
-    }
-    const depart = t;
-    for (let j = 1; j < G.path.length; j++) walk(G.path[j - 1], G.path[j], 'route', 'route');
-    const arrive = t;
-    return { tl, depart, arrive };
-  }
-  const RANK = { safe: 0, passed: 1, close: 2, danger: 3 };
-  function evaluate() {
-    const hz = hazard(), { tl, depart, arrive } = buildTimeline();
-    const end = Math.max(arrive, hz.peak) + 6;
-    const sh = NODES[G.shelter];
-    tl.push({ type: 'stay', node: sh, t0: arrive, t1: end, cat: 'shelter', label: 'shelter' });
-    /* 각 구간의 표본점마다 상태 */
-    const worst = { act: null, route: null, shelter: null };
-    const note = (cat, s) => { if (!worst[cat] || RANK[s.st] > RANK[worst[cat].st] || (RANK[s.st] === RANK[worst[cat].st] && s.st === 'danger' && s.t < worst[cat].t)) worst[cat] = s; };
-    const judge = (p, time, until) => {
-      const on = hz.onset(p);
-      if (!isFinite(on)) return { st: 'safe', on };
-      if (until >= on) return { st: 'danger', on, t: Math.max(time, on) };
-      return { st: on - until < MARGIN ? 'close' : 'passed', on, t: until };
-    };
-    for (const sg of tl) {
-      if (sg.type === 'walk') {
-        sg.marks = walkSamples(sg.a, sg.b).map(p => {
-          const time = lerp(sg.t0, sg.t1, p.f), j = judge(p, time, time), m = { ...j, p, road: sg.road, front: hz.front(p) };
-          // '지나간 뒤 위험해짐'은 피할 수 있었던 바다·하천에 붙은 길(해안도로·하구 다리)에서만 아쉬운 점으로 셈.
-          // 마을 대부분이 낮은 곳이라 다른 길은 여유 있게 벗어났다면 괜찮음 (위험할 때 있었음·아슬아슬은 어느 길이든 셈)
-          if (m.st === 'passed' && !['coast', 'bridge'].includes(sg.road.kind)) m.st = 'safe';
-          note(sg.cat, m);
-          return m;
-        });
-      } else {
-        const p = sg.node;
-        if (sg.cat === 'shelter') {
-          const on = hz.onset(p);
-          sg.marks = [{ st: !isFinite(on) ? 'safe' : sh.id === 'V' ? 'passed' : 'danger', on, t: on, p }];
-          note('shelter', sg.marks[0]);
-        } else { const j = judge(p, sg.t0, sg.t1); sg.marks = [{ ...j, p, node: p, front: hz.front(p) }]; note(sg.cat, sg.marks[0]); }
-      }
-    }
-    return { hz, tl, depart, arrive, end, worst, sc: G.sc, cond: JSON.parse(JSON.stringify(G.cond[G.sc])), shelter: G.shelter, path: G.path.slice(), acts: G.acts[G.sc].slice() };
-  }
-  /* 판정 → 항목별 피드백 (조건 확인 · 대피 장소 · 이동 경로 · 행동 우선순위) */
-  function feedback(R) {
-    const F = TX.fb, hz = R.hz, sc = R.sc, w = R.worst, c = R.cond;
-    const lv = st => st === 'danger' ? 'bad' : st === 'close' || st === 'passed' ? 'mid' : 'ok';
-    const out = [];
-    /* 대피 장소 */
-    const shW = w.shelter, sid = R.shelter;
-    let shL, shT;
-    if (sid === 'P') { shL = 'ok'; shT = F.shelter.P(sc); }
-    else if (sid === 'V') {
-      const sur = isFinite(shW.on);
-      if (sc === 'tsu') { shL = c.left <= 15 ? 'ok' : 'mid'; shT = c.left <= 15 ? F.shelter.Vshort : F.shelter.Vlong; }
-      else { shL = 'mid'; shT = sur ? F.shelter.VstormSur : F.shelter.Vstorm; }
-    } else { shL = shW.st === 'danger' ? 'bad' : 'mid'; shT = shW.st === 'danger' ? F.shelter.Mbad(sc, fmtMin(shW.on)) : F.shelter.Mok; }
-    /* 이동 경로 */
-    const rw = w.route; let rL = rw ? lv(rw.st) : 'ok', rT;
-    if (!rw || rw.st === 'safe') rT = F.route.ok(R.arrive);
-    else if (rw.st === 'danger') rT = F.route.danger(rw.road ? rw.road.name : '', fmtMin(rw.t), rw.front, rw.road && ['coast', 'bridge', 'low'].includes(rw.road.kind), R.depart >= 5);
-    else if (rw.st === 'close') rT = F.route.close(rw.road ? rw.road.name : '', fmtMin(rw.on - rw.t));
-    else rT = F.route.passed(rw.road ? rw.road.name : '', sc);
-    /* 행동 우선순위 */
-    const aw = w.act, acts = R.acts; let aL, aT;
-    const bad = sc === 'storm' ? acts.includes('boat') : acts.includes('look');
-    const slow = sc === 'tsu' && acts.includes('pack');
-    const later = [w.route, w.shelter].some(x => x && x.st === 'danger') && R.depart >= 5;   // 출발이 늦어 그 뒤에 위험해졌는지
-    if (aw && aw.st === 'danger') { aL = 'bad'; aT = F.act.danger(sc, bad, fmtMin(aw.t)); }
-    else if ((bad || slow) && later) { aL = 'bad'; aT = F.act.late(sc, bad, R.depart); }
-    else if (bad) { aL = 'mid'; aT = F.act.badLuck(sc); }
-    else if (slow) { aL = 'mid'; aT = F.act.slow(R.depart); }
-    else if (sc === 'storm') { const n = ['info', 'kit'].filter(a => acts.includes(a)).length; aL = n === 2 ? 'ok' : 'mid'; aT = n === 2 ? F.act.stormOk : F.act.stormMiss(!acts.includes('info'), !acts.includes('kit')); }
-    else { aL = acts.includes('alert') ? 'ok' : 'mid'; aT = acts.includes('alert') ? F.act.tsuOk : F.act.tsuMiss; }
-    /* 대피 장소에 '도착하기 전에' 위험한 상황이 있었으면 경로·행동 쪽에서 설명, 도착 뒤 상황은 대피 장소에서 */
-    const overall = [shL, rL, aL].includes('bad') ? 'bad' : [shL, rL, aL].includes('mid') ? 'mid' : 'ok';
-    out.push({ k: 'cond', lv: 'info', t: F.cond(sc, c, hz) });
-    out.push({ k: 'shelter', lv: shL, t: shT });
-    out.push({ k: 'route', lv: rL, t: rT });
-    out.push({ k: 'act', lv: aL, t: aT });
-    return { overall, rows: out };
-  }
-  const fmtMin = m => Math.round(m);
+  /* ---------- 캔버스 ---------- */
+  const stage = $('#stage3'), cv = $('#cv3'), ctx = cv.getContext('2d');
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * DPR; cv.height = H * DPR;
+  const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy, t = l ? clamp(((px - ax) * dx + (py - ay) * dy) / l, 0, 1) : 0; return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+  const roadDist = (x, y, roads) => { let m = 1e9; for (const r of roads) for (let i = 1; i < r.pts.length; i++) m = Math.min(m, segDist(x, y, r.pts[i - 1][0], r.pts[i - 1][1], r.pts[i][0], r.pts[i][1])); return m; };
+  const nearestRoad = (x, y, roads) => { let m = 1e9, best = null; for (const r of roads) for (let i = 1; i < r.pts.length; i++) { const d = segDist(x, y, r.pts[i - 1][0], r.pts[i - 1][1], r.pts[i][0], r.pts[i][1]); if (d < m) { m = d; best = r; } } return best; };
 
-  /* ---------- 지도 그리기 (캔버스: 지형·침수 / SVG: 도로·장소·표시) ---------- */
-  const ctx = cv.getContext('2d');
-  const EL = new Float32Array(W * H), DC = new Float32Array(W * H), RV = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x; EL[i] = elev(x, y); DC[i] = Math.max(0, coastY(x) - y); RV[i] = inRiver(x, y) ? 2 : Math.abs(x - riverX(y)) < 40 ? 1 : 0;
-  }
-  const CLS = e => e < 0 ? 0 : e < 3 ? 1 : e < 10 ? 2 : e < 20 ? 3 : 4;
-  const COL = [[156, 203, 230], [241, 226, 176], [220, 233, 196], [195, 214, 156], [169, 192, 132]];
-  (function paintTerrain() {
-    const img = ctx.createImageData(W, H), d = img.data;
+  /* 지형 색 (한 번만 계산) */
+  const terrainCv = mk(W, H);
+  (function () {
+    const c = terrainCv.getContext('2d'), img = c.createImageData(W, H), d = img.data;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = y * W + x, e = EL[i];
-      let c = RV[i] === 2 ? [125, 184, 222] : COL[CLS(e)];
-      if (e < 0) { const k = clamp((y - coastY(x)) / 120, 0, 1); c = [lerp(156, 120, k), lerp(203, 175, k), lerp(230, 214, k)]; }
-      const o = i * 4; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255;
+      const e = elev(x, y), o = (y * W + x) * 4;
+      let col;
+      if (e < 0) { const k = clamp((y - coastY(x)) / 110, 0, 1); col = [lerp(150, 104, k), lerp(198, 160, k), lerp(226, 204, k)]; }
+      else if (inRiver(x, y)) col = [118, 178, 218];
+      else col = e < 4 ? [240, 228, 186] : e < 10 ? [222, 233, 200] : e < 20 ? [198, 216, 164] : [178, 200, 142];
+      d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
     }
-    ctx.putImageData(img, 0, 0);
-    /* 등고선 (3·10·20·30 m): 4 px 격자에서 선분을 보간해 매끈한 선으로 (marching squares) */
-    const S4 = 4, gw = W / S4 + 1, gh = Math.floor(H / S4) + 1, ev = (gx, gy) => EL[Math.min(H - 1, gy * S4) * W + Math.min(W - 1, gx * S4)];
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    for (const L of [3, 10, 20, 30]) {
-      ctx.beginPath();
-      for (let gy = 0; gy < gh - 1; gy++) for (let gx = 0; gx < gw - 1; gx++) {
-        const v = [ev(gx, gy), ev(gx + 1, gy), ev(gx + 1, gy + 1), ev(gx, gy + 1)];
-        if (v.some(q => q < 0)) continue;
-        if (RV[Math.min(H - 1, gy * S4) * W + gx * S4] === 2) continue;
-        const P = [[gx, gy], [gx + 1, gy], [gx + 1, gy + 1], [gx, gy + 1]], pts = [];
-        for (let k = 0; k < 4; k++) {
-          const a0 = v[k], a1 = v[(k + 1) % 4];
-          if ((a0 < L) !== (a1 < L)) { const f = (L - a0) / (a1 - a0), p0 = P[k], p1 = P[(k + 1) % 4]; pts.push([(p0[0] + (p1[0] - p0[0]) * f) * S4, (p0[1] + (p1[1] - p0[1]) * f) * S4]); }
-        }
-        for (let k = 0; k + 1 < pts.length; k += 2) { ctx.moveTo(pts[k][0], pts[k][1]); ctx.lineTo(pts[k + 1][0], pts[k + 1][1]); }
-      }
-      ctx.strokeStyle = 'rgba(86,104,66,.75)'; ctx.lineWidth = L === 10 ? 2 : 1.3; ctx.stroke();
-    }
-    /* 해안선·하천 둑 */
-    ctx.beginPath(); for (let x = 0; x <= W; x += 3) { const y = coastY(x); x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
-    ctx.strokeStyle = 'rgba(36,48,58,.55)'; ctx.lineWidth = 2; ctx.stroke();
-    for (const sgn of [-1, 1]) { ctx.beginPath(); for (let y = 0; y <= 450; y += 4) { const x = riverX(y) + sgn * riverW(y); y ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
+    c.putImageData(img, 0, 0);
   })();
-  /* 침수(학습용) 층: 반 해상도 캔버스에 줄무늬 */
-  const fcv = document.createElement('canvas'); fcv.width = W / 2; fcv.height = H / 2; fcv.className = 'flood'; stage.insertBefore(fcv, svg);
-  const fctx = fcv.getContext('2d');
-  let floodKey = '';
-  function paintFlood(t) {
-    const hz = hazard(), key = G.sc + JSON.stringify(G.cond[G.sc]) + '|' + (t === null ? 'x' : Math.floor(t));
-    if (key === floodKey) return; floodKey = key;
-    const w = W / 2, h = H / 2, img = fctx.createImageData(w, h), d = img.data;
-    if (t !== null) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = (y * 2) * W + x * 2, e = EL[i];
-      if (e < 0 || RV[i] === 2) continue;
-      const p = { e, d: DC[i], rv: RV[i] > 0 }, on = hz.onset(p);
-      if (t < on) continue;
-      const o = (y * w + x) * 4, flood = e < hz.FL;
-      if (flood) { const s = (x + y) % 5 < 2; d[o] = s ? 20 : 46; d[o + 1] = s ? 80 : 125; d[o + 2] = s ? 160 : 190; d[o + 3] = s ? 200 : 120; }
-      else { const s = (y % 4 < 1); d[o] = 232; d[o + 1] = 85; d[o + 2] = 62; d[o + 3] = s ? 190 : 70; }   // 월파 위험(강풍): 가로 줄무늬
+
+  /* ---------- 침수 격자 (4 px) : 물이 닿는 시각 FT ---------- */
+  const FC = 4, FW = W / FC, FH = Math.ceil(H / FC);
+  const FE = new Float32Array(FW * FH), FTY = new Uint8Array(FW * FH), BANK = new Float32Array(FW * FH);   // 칸 중심 해발, 종류(0 땅 1 하천 2 바다), 하천 칸의 둑 높이(다리 높이)
+  for (let j = 0; j < FH; j++) for (let i = 0; i < FW; i++) {
+    const x = i * FC + 2, y = j * FC + 2, k = j * FW + i;
+    FE[k] = elev(x, y); FTY[k] = isSea(x, y) ? 2 : inRiver(x, y) ? 1 : 0;
+    if (FTY[k] === 1) BANK[k] = Math.min(elev(riverX(y) - riverW(y) - 4, y), elev(riverX(y) + riverW(y) + 4, y));
+  }
+  let FT = new Float64Array(FW * FH), FTMAX = 0, LV_L = 7;
+  function computeFlood(T, L) {
+    LV_L = L;
+    FT = new Float64Array(FW * FH).fill(Infinity);
+    // 최소 힙
+    const hk = [], hv = [];
+    const push = (k, v) => { hk.push(k); hv.push(v); let i = hk.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (hv[p] <= hv[i]) break; [hk[p], hk[i]] = [hk[i], hk[p]]; [hv[p], hv[i]] = [hv[i], hv[p]]; i = p; } };
+    const pop = () => { const k = hk[0], v = hv[0], lk = hk.pop(), lv = hv.pop(); if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0; for (;;) { const a = 2 * i + 1, b = a + 1; let m = i; if (a < hk.length && hv[a] < hv[m]) m = a; if (b < hk.length && hv[b] < hv[m]) m = b; if (m === i) break; [hk[m], hk[i]] = [hk[i], hk[m]]; [hv[m], hv[i]] = [hv[i], hv[m]]; i = m; } } return [k, v]; };
+    // 해일이 해안에 닿는 시각 T: 바다 칸에서 출발
+    for (let k = 0; k < FW * FH; k++) if (FTY[k] === 2) { FT[k] = T; push(k, T); }
+    const speed = k => FTY[k] === 1 ? 58 : 4 + 19 * (1 - FE[k] / L);   // px/s: 하천은 빠르게, 땅은 높을수록 느리게
+    while (hk.length) {
+      const [k, v] = pop(); if (v > FT[k]) continue;
+      const i = k % FW, j = (k / FW) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= FW || nj >= FH) continue;
+        const n = nj * FW + ni; if (FTY[n] === 2) continue;
+        if (FTY[n] === 0 && FE[n] >= L) continue;              // 침수 한계보다 높은 땅에는 물이 오르지 못함 → 그 너머 낮은 곳도 이어지지 않으면 안전
+        const nv = v + (di && dj ? 1.414 : 1) * FC / speed(n);
+        if (nv < FT[n]) { FT[n] = nv; push(n, nv); }
+      }
     }
-    fctx.putImageData(img, 0, 0);
+    FTMAX = 0; for (let k = 0; k < FT.length; k++) { const f = ftCell(k); if (f >= 0 && isFinite(f)) FTMAX = Math.max(FTMAX, f); }
+  }
+  /* 그 자리가 물에 잠기는 시각 (바다 -1). 하천 칸은 다리 위로만 다니므로, 둑(다리)이 침수 한계보다 낮을 때만 잠김 */
+  const ftCell = k => FTY[k] === 2 ? -1 : FTY[k] === 1 ? (BANK[k] < LV_L ? FT[k] : Infinity) : FT[k];
+  const ftAt = (x, y) => ftCell(clamp(Math.floor(y / FC), 0, FH - 1) * FW + clamp(Math.floor(x / FC), 0, FW - 1));
+
+  /* ---------- 이동 가능 격자 (2 px): 도로·광장, 물·통행 금지 제외 ---------- */
+  const WC = 2, WW = W / WC, WH = H / WC;
+  let WALK = new Uint8Array(WW * WH);
+  function buildWalk(lv) {
+    const c = mk(WW, WH), g = c.getContext('2d');
+    g.scale(1 / WC, 1 / WC); g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#000'; g.fillStyle = '#000';
+    g.lineWidth = 13;                                     // 캐릭터 중심이 다닐 수 있는 폭 (그림 속 도로 폭 18 - 여유)
+    for (const r of roadsOf(lv)) { g.beginPath(); r.pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); }
+    for (const id of lv.shelters) { const s = SHELTERS[id]; g.beginPath(); g.arc(s.x, s.y, 13, 0, 7); g.fill(); }
+    g.beginPath(); g.arc(lv.start[0], lv.start[1], 8, 0, 7); g.fill();
+    g.globalCompositeOperation = 'destination-out';      // 통행 금지 구간
+    for (const id of lv.closed) { const p = closedAt(id); g.beginPath(); g.arc(p[0], p[1], 9, 0, 7); g.fill(); }
+    const d = g.getImageData(0, 0, WW, WH).data, bridgeMask = mk(WW, WH), bg = bridgeMask.getContext('2d');
+    bg.scale(1 / WC, 1 / WC); bg.lineWidth = 16; bg.lineCap = 'butt';
+    for (const r of roadsOf(lv)) if (r.bridge && !lv.closed.includes(r.id)) { bg.beginPath(); r.pts.forEach(([x, y], i) => i ? bg.lineTo(x, y) : bg.moveTo(x, y)); bg.stroke(); }
+    const bd = bg.getImageData(0, 0, WW, WH).data;
+    WALK = new Uint8Array(WW * WH);
+    for (let j = 0; j < WH; j++) for (let i = 0; i < WW; i++) {
+      const k = j * WW + i, x = i * WC + 1, y = j * WC + 1;
+      if (d[k * 4 + 3] < 128 || isSea(x, y)) continue;
+      if (inRiver(x, y) && bd[k * 4 + 3] < 128) continue;  // 하천은 다리 위로만
+      WALK[k] = 1;
+    }
+  }
+  const walkable = (x, y) => x >= 0 && y >= 0 && x < W && y < H && WALK[Math.floor(y / WC) * WW + Math.floor(x / WC)] === 1;
+  const roadsOf = lv => ROADS.filter(r => !r.only || lv.shelters.includes(r.only));
+  const closedAt = id => { const r = ROADS.find(q => q.id === id), a = r.pts[0], b = r.pts[r.pts.length - 1]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+
+  /* ---------- 바탕 지도 (조건마다 한 번 그림) ---------- */
+  const baseCv = mk(W * DPR, H * DPR);
+  function drawBase(lv) {
+    const g = baseCv.getContext('2d');
+    g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
+    g.imageSmoothingEnabled = true; g.drawImage(terrainCv, 0, 0, W, H);
+    // 등고선 5·10·20 m (marching squares, 4 px 격자)
+    g.lineCap = 'round';
+    for (const L of [5, 10, 20]) {
+      g.beginPath();
+      for (let j = 0; j < FH - 1; j++) for (let i = 0; i < FW - 1; i++) {
+        const v = [FE[j * FW + i], FE[j * FW + i + 1], FE[(j + 1) * FW + i + 1], FE[(j + 1) * FW + i]];
+        if (v.some(q => q < 0) || FTY[j * FW + i] === 1) continue;
+        const P = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]], pts = [];
+        for (let q = 0; q < 4; q++) { const a0 = v[q], a1 = v[(q + 1) % 4]; if ((a0 < L) !== (a1 < L)) { const f = (L - a0) / (a1 - a0), p0 = P[q], p1 = P[(q + 1) % 4]; pts.push([(p0[0] + (p1[0] - p0[0]) * f) * FC + 2, (p0[1] + (p1[1] - p0[1]) * f) * FC + 2]); } }
+        for (let q = 0; q + 1 < pts.length; q += 2) { g.moveTo(pts[q][0], pts[q][1]); g.lineTo(pts[q + 1][0], pts[q + 1][1]); }
+      }
+      g.strokeStyle = 'rgba(86,104,66,.55)'; g.lineWidth = L === 10 ? 1.8 : 1.1; g.stroke();
+    }
+    // 해안선·하천 둑
+    g.strokeStyle = 'rgba(36,48,58,.6)'; g.lineWidth = 2;
+    g.beginPath(); for (let x = 0; x <= W; x += 3) { const y = coastY(x); x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
+    for (const s of [-1, 1]) { g.beginPath(); for (let y = 0; y <= 430; y += 4) { const x = riverX(y) + s * riverW(y); y ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
+    // 방파제
+    g.strokeStyle = '#7B8792'; g.lineWidth = 6; g.beginPath(); g.moveTo(612, 412); g.lineTo(626, 444); g.moveTo(778, 410); g.lineTo(766, 442); g.stroke();
+    const roads = roadsOf(lv);
+    // 건물(지나갈 수 없음): 도로·하천·대피 장소에서 떨어진 땅에 작은 집
+    g.fillStyle = '#D5D9DD'; g.strokeStyle = '#8A949C'; g.lineWidth = 1;
+    for (let y = 40; y < 430; y += 19) for (let x = 14; x < W - 10; x += 23) {
+      const jx = x + ((y * 7) % 9) - 4, jy = y + ((x * 3) % 7) - 3, e = elev(jx, jy);
+      if (e < .8 || e > 17 || Math.abs(jx - riverX(jy)) < riverW(jy) + 14) continue;
+      if (roadDist(jx, jy, roads) < 17) continue;
+      if (Object.values(SHELTERS).some(s => Math.hypot(s.x - jx, s.y - jy) < 40)) continue;
+      g.fillRect(jx - 6, jy - 4.5, 12, 9); g.strokeRect(jx - 6, jy - 4.5, 12, 9);
+    }
+    // 도로: 테두리 → 바탕(침수 위험 구간은 옅은 파랑) → 위험 구간 파란 점선
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const path = r => { g.beginPath(); r.pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); };
+    for (const r of roads) { path(r); g.strokeStyle = INK; g.lineWidth = 19; g.stroke(); }
+    for (const r of roads) { path(r); g.strokeStyle = r.bridge ? '#ECEFF1' : (r.kind === 'coast' || r.kind === 'river') ? '#D3E6F6' : '#FFFFFF'; g.lineWidth = 15; g.stroke(); }
+    for (const r of roads) if (r.kind === 'coast' || r.kind === 'river') { path(r); g.setLineDash([7, 6]); g.strokeStyle = '#2B6CB0'; g.lineWidth = 2; g.stroke(); g.setLineDash([]); }
+    // 통행 금지(공사)
+    for (const id of lv.closed) {
+      const [x, y] = closedAt(id);
+      g.save(); g.translate(x, y); g.fillStyle = '#fff'; g.strokeStyle = INK; g.lineWidth = 2; g.fillRect(-11, -11, 22, 22); g.strokeRect(-11, -11, 22, 22);
+      g.strokeStyle = '#D9483B'; g.lineWidth = 4; g.beginPath(); g.moveTo(-7, -7); g.lineTo(7, 7); g.moveTo(7, -7); g.lineTo(-7, 7); g.stroke(); g.restore();
+      label(g, TX.map.closed, x, y + 24, { fs: 13, bg: '#FCE6E1' });
+    }
+    // 지명·표고·표지판
+    label(g, TX.map.sea, 150, 492, { fs: 22, color: '#1E5A85', plain: true });
+    label(g, TX.map.harbor, 694, 410, { fs: 14, plain: true, color: '#1E5A85' });
+    label(g, TX.map.river, 470, 70, { fs: 15, plain: true, color: '#1E5A85' });
+    label(g, TX.map.low, 190, 372, { fs: 14, plain: true }); label(g, TX.map.high, 330, 120, { fs: 14, plain: true });
+    for (const [x, y] of [[200, 413], [640, 374], [560, 300], [270, 190], [700, 190], [405, 300], [905, 330]]) spot(g, x, y);
+    for (const [x, y, t] of [[150, 300, TX.map.signW], [760, 300, TX.map.signE], [560, 190, TX.map.signUp], [300, 411, TX.map.signN], [680, 374, TX.map.signN]]) sign(g, x, y, t);
+    label(g, TX.map.risk, 250, 432, { fs: 12, bg: '#D3E6F6', color: '#1E5A85' });
+    label(g, TX.map.risk, 532, 352, { fs: 12, bg: '#D3E6F6', color: '#1E5A85' });
+    // 지정 대피 장소
+    for (const id of lv.shelters) shelterIcon(g, SHELTERS[id]);
+  }
+  function label(g, text, x, y, o = {}) {
+    g.font = `${o.fs || 14}px Jua, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const w = g.measureText(text).width + 12, h = (o.fs || 14) + 8;
+    if (!o.plain) { g.fillStyle = o.bg || '#FFFDF8'; g.strokeStyle = INK; g.lineWidth = 1.5; roundRect(g, x - w / 2, y - h / 2, w, h, h / 2); g.fill(); g.stroke(); }
+    else { g.lineWidth = 4; g.strokeStyle = 'rgba(255,253,248,.85)'; g.lineJoin = 'round'; g.strokeText(text, x, y); }
+    g.fillStyle = o.color || INK; g.fillText(text, x, y + 1);
+  }
+  function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  function spot(g, x, y) { label(g, TX.map.spot(Math.max(1, Math.round(elev(x, y)))), x + 22, y - 15, { fs: 11, bg: '#FFFDF8' }); }
+  function sign(g, x, y, t) { label(g, t, x, y - 18, { fs: 12, bg: '#2F8F5B', color: '#fff' }); }
+  function shelterIcon(g, s) {
+    g.save(); g.translate(s.x, s.y);
+    if (s.kind === 'building') { g.fillStyle = '#E9EEF2'; g.strokeStyle = INK; g.lineWidth = 2.5; g.fillRect(-13, -16, 26, 30); g.strokeRect(-13, -16, 26, 30); g.fillStyle = '#2F8F5B'; g.fillRect(-13, -16, 26, 9); }
+    else { g.fillStyle = '#2F8F5B'; g.strokeStyle = INK; g.lineWidth = 2.5; g.beginPath(); g.moveTo(0, -17); g.lineTo(16, 10); g.lineTo(-16, 10); g.closePath(); g.fill(); g.stroke(); }
+    g.restore();
+    label(g, TX.map.shelter(s.name, Math.round(s.e)), s.x + (s.x > 800 ? -24 : 0), s.y - 30, { fs: 14, bg: '#E4F3E8' });
   }
 
-  /* SVG 층 */
-  const gScn = E('g'), gRoad = E('g'), gTime = E('g'), gRoute = E('g'), gRes = E('g'), gNode = E('g'), gLab = E('g'), gMark = E('g');
-  svg.append(gScn, gRoad, gRoute, gRes, gTime, gNode, gLab, gMark);
-  const polyD = pts => pts.map((p, j) => (j ? 'L' : 'M') + f1(p.x) + ' ' + f1(p.y)).join('');
-  /* 항구 방파제 */
-  gRoad.appendChild(E('path', { d: 'M640 425 L652 455 M760 420 L748 452', stroke: '#7B8792', 'stroke-width': 6, 'stroke-linecap': 'round' }));
-  /* 도로 */
-  ROADS.forEach(r => {
-    const d = polyD(r.pts);
-    gRoad.appendChild(E('path', { d, stroke: INK, 'stroke-width': r.kind === 'coast' ? 11 : 9, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-    gRoad.appendChild(E('path', { d, stroke: r.kind === 'coast' ? '#F6D9A0' : '#FFFFFF', 'stroke-width': r.kind === 'coast' ? 7 : 5.5, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-    if (r.kind === 'coast') gRoad.appendChild(E('path', { d, stroke: '#B9744A', 'stroke-width': 1.5, 'stroke-dasharray': '6 5', fill: 'none' }));
-    if (r.kind === 'bridge' || r.kind === 'bridge2') {
-      const mid = r.samples.filter(s => inRiver(s.x, s.y)); if (mid.length) { const a = mid[0], b = mid[mid.length - 1]; gRoad.appendChild(E('path', { d: `M${f1(a.x - 4)} ${f1(a.y)} L${f1(b.x + 4)} ${f1(b.y)}`, stroke: '#8A8276', 'stroke-width': 13, 'stroke-linecap': 'butt' })); gRoad.appendChild(E('path', { d: `M${f1(a.x - 4)} ${f1(a.y)} L${f1(b.x + 4)} ${f1(b.y)}`, stroke: '#FFFFFF', 'stroke-width': 6 })); }
-    }
-    // 걸리는 시간(분) 표시 — 경로를 고를 때만 보임
-    const m = along(r.pts, r.seg, r.L, .5), tg = E('g', { transform: `translate(${f1(m.x)},${f1(m.y)})` }, [E('rect', { x: -18, y: -11, width: 36, height: 22, rx: 11, fill: '#FFFDF8', stroke: INK, 'stroke-width': 2 }), E('text', { y: 5.5, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 15, fill: INK, text: TX.min(r.t) })]);
-    r.tag = tg; gTime.appendChild(tg);
-  });
-  /* 이름표 (지도 글자) */
-  const lab = (x, y, text, o = {}) => { const t = E('text', { x, y, 'text-anchor': o.anchor || 'middle', 'font-family': o.font || 'Jua', 'font-size': o.fs || 15, fill: o.color || INK, 'paint-order': 'stroke', stroke: o.halo || 'rgba(255,253,248,.9)', 'stroke-width': o.hw ?? 4, 'stroke-linejoin': 'round', text }); gLab.appendChild(t); return t; };
-  lab(150, 505, TX.map.sea, { fs: 26, color: '#1E5A85', halo: 'rgba(200,228,244,.8)' });
-  lab(488, 160, TX.map.river, { fs: 17, color: '#1E5A85' });
-  lab(165, 436, TX.map.low, { fs: 16 }); lab(250, 300, TX.map.mid, { fs: 16 }); lab(640, 140, TX.map.high, { fs: 16 });
-  lab(705, 445, TX.map.harbor, { fs: 16 }); lab(565, 465, TX.map.beach, { fs: 15 });
-  [['3 m', 318, 368], ['10 m', 540, 196], ['20 m', 760, 240]].forEach(([s, x, y]) => lab(x, y, s, { fs: 13, font: 'Noto Sans KR', color: '#4F5E3E' }));
-  /* 장소: 우리 집·대피 장소 후보 (기호 + 글자) */
-  const shelterG = {};
-  function placeIcon(n) {
-    const g = E('g', { transform: `translate(${n.x},${n.y})`, class: 'place' });
-    if (n.id === 'H') g.append(E('circle', { r: 11, fill: '#5B9BD5', stroke: INK, 'stroke-width': 2.5 }), E('path', { d: 'M-6 1 L0 -6 L6 1 V6 H-6 Z', fill: '#fff' }));
-    else if (n.id === 'P') g.append(E('path', { d: 'M0 -16 L15 10 H-15 Z', fill: '#3FA36B', stroke: INK, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }), E('text', { y: 7, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 12, fill: '#fff', text: '대' }));
-    else if (n.id === 'V') g.append(E('rect', { x: -10, y: -17, width: 20, height: 30, fill: '#E9EEF2', stroke: INK, 'stroke-width': 2.5 }), ...[-10, -2, 6].map(y => E('line', { x1: -6, x2: 6, y1: y, y2: y, stroke: INK, 'stroke-width': 2 })));
-    else if (n.id === 'M') g.append(E('path', { d: 'M-12 8 V-3 L0 -13 L12 -3 V8 Z', fill: '#F2B233', stroke: INK, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
-    gNode.appendChild(g); return g;
-  }
-  ['H', ...SHELTERS].forEach(id => { shelterG[id] = placeIcon(NODES[id]); });
-  const placeLab = {
-    H: [NODES.H.x - 14, NODES.H.y - 16, 'end'], P: [NODES.P.x, NODES.P.y - 26, 'middle'], V: [NODES.V.x + 18, NODES.V.y - 6, 'start'], M: [NODES.M.x - 16, NODES.M.y + 24, 'end'],
+  /* ---------- 소리 (대피 시작을 누른 뒤에만, 끌 수 있음) ---------- */
+  const Snd = {
+    on: true, ctx: null,
+    init() {
+      if (this.ctx) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const c = this.ctx = new AC();
+      this.master = c.createGain(); this.master.gain.value = this.on ? .7 : 0; this.master.connect(c.destination);
+      const buf = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
+      this.filt = c.createBiquadFilter(); this.filt.type = 'lowpass'; this.filt.frequency.value = 300;
+      this.wave = c.createGain(); this.wave.gain.value = 0;
+      src.connect(this.filt); this.filt.connect(this.wave); this.wave.connect(this.master); src.start();
+    },
+    tone(f0, f1, t0, dur, vol = .12, type = 'sine') {
+      if (!this.ctx) return; const c = this.ctx, o = c.createOscillator(), gn = c.createGain(), t = c.currentTime + t0;
+      o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.linearRampToValueAtTime(f1, t + dur);
+      gn.gain.setValueAtTime(0, t); gn.gain.linearRampToValueAtTime(vol, t + .04); gn.gain.setValueAtTime(vol, t + dur - .06); gn.gain.linearRampToValueAtTime(0, t + dur);
+      o.connect(gn); gn.connect(this.master); o.start(t); o.stop(t + dur + .02);
+    },
+    siren() { for (let i = 0; i < 3; i++) { this.tone(620, 920, i * 1.1, .55, .09); this.tone(920, 620, i * 1.1 + .55, .55, .09); } },
+    beep() { this.tone(880, 880, 0, .16, .08); this.tone(880, 880, .24, .16, .08); },
+    chime() { this.tone(660, 660, 0, .25, .1); this.tone(880, 880, .22, .45, .1); },
+    low() { this.tone(330, 260, 0, .6, .09); },
+    setWave(level, t) { if (!this.ctx) return; const s = level * (.65 + .35 * Math.sin(t * 2 * Math.PI / 3.2)); this.wave.gain.setTargetAtTime(.02 + .28 * s, this.ctx.currentTime, .1); this.filt.frequency.setTargetAtTime(260 + 1000 * level, this.ctx.currentTime, .2); },
+    quiet() { if (this.ctx) this.wave.gain.setTargetAtTime(0, this.ctx.currentTime, .15); },
+    pause(v) { if (!this.ctx) return; v ? this.ctx.suspend() : this.ctx.resume(); },
+    setOn(v) { this.on = v; if (this.ctx) this.master.gain.setTargetAtTime(v ? .7 : 0, this.ctx.currentTime, .05); },
   };
-  for (const id in placeLab) {
-    const [x, y, a] = placeLab[id], n = NODES[id];
-    lab(x, y, TX.placeMap(TX.place[id], Math.round(n.e)), { fs: 16, anchor: a });
+
+  /* ---------- 게임 상태 ---------- */
+  const G = { li: 0, lv: null, state: 'ready', paused: false, t: 0, x: 0, y: 0, dir: 0, trail: [], moved: null, beeped: {}, result: null, floodDone: false };
+  const keys = { up: false, down: false, left: false, right: false };
+  const clearKeys = () => { for (const k in keys) keys[k] = false; $$('#dpad3 button').forEach(b => b.classList.remove('on')); };
+  function setLevel(i) {
+    G.li = i; G.lv = MODE.levels[i];
+    computeFlood(G.lv.T, G.lv.L); buildWalk(G.lv); drawBase(G.lv);
+    reset();
   }
-  /* 갈림길 점 (경로 고르기) */
-  const nodeEls = {};
-  for (const k in NODES) {
-    if (['H', ...SHELTERS].includes(k)) continue;
-    const n = NODES[k], g = E('g', { transform: `translate(${n.x},${n.y})`, class: 'jn' }, [E('circle', { r: 6.5, fill: '#FFFDF8', stroke: INK, 'stroke-width': 2.5 })]);
-    gNode.appendChild(g); nodeEls[k] = g;
+  function reset() {
+    const lv = G.lv;
+    Object.assign(G, { state: 'ready', paused: false, t: 0, x: lv.start[0], y: lv.start[1], dir: -Math.PI / 2, trail: [[lv.start[0], lv.start[1], 0]], moved: null, beeped: {}, result: null, floodDone: false });
+    clearKeys(); Snd.quiet(); floodKey = -1;
+    $('#g3-paused').hidden = true;
+    renderSide(); hud(); draw();
   }
-  /* 누를 수 있는 표시(다음 갈림길·대피 장소 후보) */
-  const gHit = E('g'); svg.appendChild(gHit);
-  /* 상황 표시: 태풍 진로·바람 / 지진·해일 전파 */
-  function drawScenario() {
-    gScn.innerHTML = '';
-    if (G.sc === 'storm') {
-      const c = G.cond.storm, strong = c.wind === 'strong';
-      gScn.appendChild(E('path', { d: 'M40 545 Q150 500 250 515', stroke: '#C7432E', 'stroke-width': 4, fill: 'none', 'stroke-dasharray': '10 7' }));
-      gScn.appendChild(E('path', { d: arrow1D(225, 518, 255, 513, 10), stroke: '#C7432E', 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round' }));
-      const ty = E('g', { transform: 'translate(270,505)' }, [E('circle', { r: 15, fill: '#fff', stroke: '#C7432E', 'stroke-width': 3.5 }), E('path', { d: 'M-8 -6 A10 10 0 0 1 8 -6 M8 6 A10 10 0 0 1 -8 6', stroke: '#C7432E', 'stroke-width': 3, fill: 'none' })]);
-      gScn.appendChild(ty);
-      [[350, 520], [470, 522], [590, 518], [820, 520]].forEach(([x, y]) => {
-        const len = strong ? 34 : 18;
-        gScn.appendChild(E('path', { d: arrow1D(x, y, x + len * .35, y - len, strong ? 9 : 7), stroke: '#1F9E8F', 'stroke-width': strong ? 5 : 3, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-      });
-      const t1 = E('text', { x: 296, y: 532, 'font-family': 'Jua', 'font-size': 15, fill: '#C7432E', text: TX.map.track }); gScn.appendChild(t1);
-      const t2 = E('text', { x: 640, y: 500, 'font-family': 'Jua', 'font-size': 15, fill: '#14695F', text: strong ? TX.map.windS : TX.map.windW }); gScn.appendChild(t2);
-    } else {
-      gScn.appendChild(E('path', { d: 'M920 548 l6 -14 l-15 0 l12 -9 l-5 -14 l12 9 l12 -9 l-5 14 l12 9 l-15 0 Z', fill: '#FFE082', stroke: INK, 'stroke-width': 2 }));
-      [60, 120, 180].forEach(r => gScn.appendChild(E('path', { d: `M${926 - r} 540 A${r} ${r * .5} 0 0 1 ${Math.min(960, 926 + r)} ${540 - r * .5 + (926 + r > 960 ? 30 : 0)}`, stroke: '#2B6CB0', 'stroke-width': 3, fill: 'none', 'stroke-dasharray': '8 6', opacity: .8 })));
-      gScn.appendChild(E('text', { x: 885, y: 530, 'text-anchor': 'end', 'font-family': 'Jua', 'font-size': 15, fill: '#1E5A85', 'paint-order': 'stroke', stroke: 'rgba(200,228,244,.85)', 'stroke-width': 4, text: TX.map.quake }));
-    }
+  function start() {
+    if (G.state !== 'ready') return;
+    Snd.init(); Snd.pause(false); setPaused(false);
+    G.state = 'play'; G.paused = false;
+    Snd.siren();
+    renderSide(); hud();
+    cv.focus({ preventScroll: true });
+  }
+  function setGamePause(v) {
+    if (G.state !== 'play') return;
+    G.paused = v; clearKeys(); Snd.pause(v); if (!v) setPaused(false);
+    $('#g3-paused').hidden = !v; hud();
+  }
+  function finish(ok, why) {
+    G.state = 'done'; clearKeys();
+    G.result = analyse(ok, why);
+    ok ? Snd.chime() : Snd.low(); Snd.quiet();
+    renderSide(); hud(); draw();
   }
 
-  /* 경로·결과 표시 */
-  const pathLine = E('path', { stroke: '#7B4FB0', 'stroke-width': 6, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: .9 });
-  const pathDash = E('path', { stroke: '#fff', 'stroke-width': 2, fill: 'none', 'stroke-dasharray': '2 8', 'stroke-linecap': 'round' });
-  gRoute.append(pathLine, pathDash);
-  const tripLine = E('path', { stroke: '#C7432E', 'stroke-width': 4, fill: 'none', 'stroke-dasharray': '7 6', 'stroke-linecap': 'round' });
-  gRoute.appendChild(tripLine);
-  const marker = E('g', {}, [E('circle', { r: 10, fill: '#7B4FB0', stroke: '#fff', 'stroke-width': 3 }), E('circle', { r: 10, fill: 'none', stroke: INK, 'stroke-width': 1.5 })]);
-  const warn = E('g', {}, [E('path', { d: 'M0 -30 L13 -8 H-13 Z', fill: '#F2B233', stroke: INK, 'stroke-width': 2, 'stroke-linejoin': 'round' }), E('text', { y: -11, 'text-anchor': 'middle', 'font-family': 'Jua', 'font-size': 14, fill: INK, text: '!' })]);
-  gMark.append(marker, warn);
-  function pathPts(path) { const pts = []; for (let j = 1; j < path.length; j++) { const r = roadOf(path[j - 1], path[j]); const p = r.a === path[j - 1] ? r.pts : r.pts.slice().reverse(); pts.push(...(j > 1 ? p.slice(1) : p)); } return pts; }
-  function drawPath() {
-    const pts = pathPts(G.path);
-    pathLine.setAttribute('d', pts.length ? polyD(pts) : ''); pathDash.setAttribute('d', pts.length ? polyD(pts) : '');
-    const trip = ACTS[G.sc].filter(a => a.trip && G.acts[G.sc].includes(a.id)).map(a => polyD(pathPts(a.trip))).join('');
-    tripLine.setAttribute('d', trip);
-  }
-  const ST_COL = { safe: '#3FA36B', passed: '#F2B233', close: '#F28C28', danger: '#D9483B' };
-  function drawResult(R) {
-    gRes.innerHTML = '';
-    if (!R) return;
-    for (const sg of R.tl) {
-      if (sg.type !== 'walk') continue;
-      const ms = sg.marks;
-      for (let j = 1; j < ms.length; j++) {
-        const a = ms[j - 1], b = ms[j], st = RANK[a.st] >= RANK[b.st] ? a.st : b.st;
-        gRes.appendChild(E('line', { x1: f1(a.p.x), y1: f1(a.p.y), x2: f1(b.p.x), y2: f1(b.p.y), stroke: ST_COL[st], 'stroke-width': sg.cat === 'route' ? 8 : 5, 'stroke-linecap': 'round', opacity: sg.cat === 'route' ? 1 : .85 }));
+  /* ---------- 이동 (프레임 시간 비례 · 대각선 정규화 · 길을 따라 미끄러짐) ---------- */
+  function move(dt) {
+    let ix = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), iy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+    if (!ix && !iy) return;
+    const n = Math.hypot(ix, iy); ix /= n; iy /= n;
+    const base = Math.atan2(iy, ix);
+    let rest = SPEED * dt;
+    while (rest > 1e-6) {
+      const step = Math.min(rest, 1.5); rest -= step;
+      let done = false;
+      // 막히면: 가까운 방향(±17°·±34°) → 가로·세로 축으로 미끄러지기(대각선 입력) → 더 꺾인 방향(±52°·±69°, 비스듬한 길)
+      const cands = [0, .3, -.3, .6, -.6];
+      if (ix && iy) cands.push(Math.atan2(0, ix) - base, Math.atan2(iy, 0) - base);
+      cands.push(.9, -.9, 1.2, -1.2);
+      for (const da of cands) {
+        const a = base + da, nx = G.x + Math.cos(a) * step, ny = G.y + Math.sin(a) * step;
+        if (walkable(nx, ny)) { G.x = nx; G.y = ny; G.dir = a; done = true; break; }
       }
+      if (!done) break;
     }
-  }
-
-  /* ---------- 오른쪽 카드: 단계별 내용 ---------- */
-  const panel = $('#g3'), setCap = explainCard($('#ex3'));
-  $('#gs3').innerHTML = TX.steps.map((s, i) => `<li><i>${i + 1}</i>${s}</li>`).join('');
-  $('#badge3').textContent = TX.badge; $('#chip3').textContent = TX.chip;
-  $('#t3-h-src').textContent = TX.hSrc; $('#t3-src').innerHTML = TX.sources;
-  $('#leg3').innerHTML = TX.legend.map(([sw, t]) => `<li>${sw}<span>${t}</span></li>`).join('');
-  const clock = $('#clock3');
-  const h = (tag, cls, html) => `<${tag}${cls ? ` class="${cls}"` : ''}>${html}</${tag}>`;
-  function render() {
-    $$('#gs3 li').forEach((li, i) => { li.classList.toggle('on', i + 1 === G.step); li.classList.toggle('done', i + 1 < G.step); });
-    drawScenario(); drawPath();
-    const showTimes = G.step === 2 && G.sub === 'route';
-    gTime.style.display = showTimes ? '' : 'none';
-    if (showTimes) {   // 걸리는 시간은 지금 고를 수 있는 길과 이미 고른 길에만 표시
-      const last = G.path[G.path.length - 1], onPath = new Set(); for (let j = 1; j < G.path.length; j++) onPath.add(roadOf(G.path[j - 1], G.path[j]));
-      ROADS.forEach(r => { const next = !routeDone() && (r.a === last || r.b === last) && !G.path.includes(r.a === last ? r.b : r.a); r.tag.style.display = next || onPath.has(r) ? '' : 'none'; });
-    }
-    marker.style.display = G.step >= 3 ? '' : 'none'; warn.style.display = 'none';
-    if (G.step < 3) { paintFlood(null); drawResult(null); clock.hidden = true; const s = NODES.H; marker.setAttribute('transform', `translate(${s.x},${s.y})`); }
-    hits();
-    let html = '';
-    if (G.step === 1) html = stepInfo();
-    else if (G.step === 2) html = stepChoose();
-    else if (G.step === 3) html = stepRun();
-    else if (G.step === 4) html = stepResult();
-    else html = stepRetry();
-    panel.innerHTML = html;
-    bindPanel();
-    setCap(TX.cap[G.step === 2 ? 'choose_' + G.sub : 's' + G.step]);
-  }
-  /* ① 상황 확인 */
-  function facts() {
-    const F = TX.facts;
-    if (G.sc === 'storm') { const c = G.cond.storm; return [['🌀', F.track], ['💨', F.wind(c.wind), G.changed === 'wind'], ['⏱', F.storm_t], ['🌊', F.tide(c.tide), G.changed === 'tide'], ['🏠', F.home(Math.round(NODES.H.e))]]; }
-    const c = G.cond.tsu; return [['📍', F.quake], ['📢', F.warn], ['⏱', F.left(c.left), G.changed === 'left'], ['🏠', F.home(Math.round(NODES.H.e))]];
-  }
-  function stepInfo() {
-    const segSc = `<div class="seg" id="g3-sc">${['storm', 'tsu'].map(v => `<button type="button" data-sc="${v}" class="${G.sc === v ? 'sel' : ''}" aria-pressed="${G.sc === v}">${TX.scName[v]}</button>`).join('')}</div>`;
-    return h('h4', 'g-h', TX.s1h) + segSc +
-      h('ul', 'g-facts', facts().map(([ic, t, chg]) => `<li class="${chg ? 'chg' : ''}"><span class="ic" aria-hidden="true">${ic}</span><span>${t}</span></li>`).join('')) +
-      h('p', 'g-p', TX.s1note) +
-      `<div class="g-row"><div class="spacer"></div><button class="btn primary" type="button" data-go="2">${G.result ? TX.btn.toChooseKeep : TX.btn.toChoose}</button></div>`;
-  }
-  /* ② 대비 선택: 대피 장소 → 이동 경로 → 출발 전 행동 (지금 고르는 것만 펼침) */
-  const routeDone = () => G.shelter && G.path[G.path.length - 1] === G.shelter;
-  const routeTime = () => { let t = 0; for (let j = 1; j < G.path.length; j++) t += roadOf(G.path[j - 1], G.path[j]).t; return t; };
-  const actTime = () => ACTS[G.sc].filter(a => G.acts[G.sc].includes(a.id)).reduce((s, a) => s + a.t + (a.trip ? 2 * pathTime(a.trip) : 0), 0);
-  const pathTime = p => { let t = 0; for (let j = 1; j < p.length; j++) t += roadOf(p[j - 1], p[j]).t; return t; };
-  function stepChoose() {
-    const C = TX.choose; let s = h('h4', 'g-h', TX.s2h);
-    const sum = (n, label, val, key) => `<div class="g-sum"><span class="g-sub done" style="margin:0"><span class="n">${n}</span></span><b>${label}: ${val}</b><button type="button" class="lnk" data-sub="${key}">${TX.btn.edit}</button></div>`;
-    // 가. 대피 장소
-    if (G.sub === 'shelter') {
-      s += h('div', 'g-sub', `<span class="n">1</span>${C.shelterQ}`) +
-        h('div', 'g-opts', SHELTERS.map(id => `<button type="button" class="g-opt" role="radio" aria-checked="${G.shelter === id}" data-shelter="${id}"><span class="ic" aria-hidden="true">${TX.placeIcon[id]}</span><span class="tx">${TX.place[id]}<small>${TX.placeSub[id](Math.round(NODES[id].e))}</small></span></button>`).join('')) +
-        h('p', 'g-p mini-note', C.shelterHint);
-    } else s += sum(1, C.shelterL, TX.place[G.shelter], 'shelter');
-    // 나. 이동 경로
-    if (G.sub === 'route') {
-      const last = G.path[G.path.length - 1], nx = neighbors(last).filter(k => !G.path.includes(k));
-      s += h('div', 'g-sub', `<span class="n">2</span>${C.routeQ(TX.place[G.shelter])}`);
-      s += `<div class="g-route">${G.path.map(k => NODES[k].name).join(' → ')}</div>`;
-      if (!routeDone()) s += h('div', 'g-opts', nx.map(k => { const r = roadOf(last, k); return `<button type="button" class="g-opt" data-next="${k}"><span class="ic" aria-hidden="true">${TX.roadIcon[r.kind]}</span><span class="tx">${NODES[k].name}<small>${r.name}</small></span><em>${TX.min(r.t)}</em></button>`; }).join('') || h('p', 'g-p', C.deadEnd));
-      else s += h('p', 'g-p', C.routeDone(routeTime()));
-      s += `<div class="g-row"><span class="g-route">${C.routeTime} <span class="tm">${TX.min(routeTime())}</span></span><div class="spacer"></div><button class="btn" type="button" data-undo ${G.path.length < 2 ? 'disabled' : ''}>${TX.btn.undo}</button><button class="btn" type="button" data-clear ${G.path.length < 2 ? 'disabled' : ''}>${TX.btn.clear}</button></div>`;
-      if (routeDone()) s += `<div class="g-row"><div class="spacer"></div><button class="btn primary" type="button" data-sub="act">${TX.btn.next}</button></div>`;
-    } else if (G.sub === 'act') s += sum(2, C.routeL, `${G.path.map(k => NODES[k].name).slice(1).join(' → ')} (${TX.min(routeTime())})`, 'route');
-    // 다. 출발 전 행동
-    if (G.sub === 'act') {
-      s += h('div', 'g-sub', `<span class="n">3</span>${C.actQ}`) +
-        h('div', 'g-opts', ACTS[G.sc].map(a => { const on = G.acts[G.sc].includes(a.id), t = a.t + (a.trip ? 2 * pathTime(a.trip) : 0); return `<button type="button" class="g-opt chk" aria-pressed="${on}" data-act="${a.id}"><span class="tx">${TX.act[a.id]}<small>${TX.actSub[a.id]}</small></span><em>+${TX.min(t)}</em></button>`; }).join('')) +
-        `<div class="g-total"><span>${C.total}</span><b>${TX.min(actTime() + routeTime())}</b></div>` +
-        `<div class="g-row"><button class="btn" type="button" data-go="1">${TX.btn.back1}</button><div class="spacer"></div><button class="btn primary" type="button" data-run>${TX.btn.run}</button></div>`;
-    }
-    return s;
-  }
-  /* ③ 실행: 시간표 */
-  function stepRun() {
-    const R = G.result;
-    const items = R.tl.filter(sg => sg.cat !== 'shelter').reduce((arr, sg) => { const k = sg.cat === 'route' ? 'route' : sg.label; const last = arr[arr.length - 1]; if (last && last.k === k) last.t1 = sg.t1; else arr.push({ k, t0: sg.t0, t1: sg.t1 }); return arr; }, []);
-    items.push({ k: 'arrive', t0: R.arrive, t1: R.arrive });
-    G.runItems = items;
-    return h('h4', 'g-h', TX.s3h) + `<ol class="g-tl" id="g3-tl">${items.map((it, i) => `<li data-i="${i}"><b>${TX.min(it.t0)}</b><span>${TX.tl[it.k] || TX.tl.route}</span></li>`).join('')}</ol>` +
-      `<div class="g-row"><div class="spacer"></div><button class="btn" type="button" data-skip>${TX.btn.skip}</button></div>`;
-  }
-  /* ④ 결과 확인 */
-  function stepResult() {
-    const R = G.result, fb = feedback(R);
-    G.lastFb = fb;
-    let s = h('div', 'verdict ' + fb.overall, TX.verdict[fb.overall]);
-    s += h('ul', 'fb', fb.rows.map(r => `<li class="${r.lv}"><div class="fh"><span class="mk" aria-hidden="true">${TX.mark[r.lv]}</span>${TX.fbName[r.k]}<span class="mkw">${TX.markWord[r.lv]}</span></div><p>${r.t}${r.lv === 'mid' || r.lv === 'bad' ? ` <button type="button" class="fix" data-fix="${r.k}">${TX.btn.fix}</button>` : ''}</p></li>`).join(''));
-    if (G.prev && G.prev.sc === R.sc) s += h('div', 'cmp', TX.compare(condWord(G.prev.sc, G.prev.cond), TX.verdictShort[G.prev.overall], condWord(R.sc, R.cond), TX.verdictShort[fb.overall]));
-    s += `<div class="g-row"><button class="btn" type="button" data-replay>${TX.btn.replay}</button><div class="spacer"></div><button class="btn primary" type="button" data-go="5">${TX.btn.retry}</button></div>`;
-    return s;
-  }
-  const condWord = (sc, c) => sc === 'storm' ? TX.condWord.storm(c) : TX.condWord.tsu(c);
-  /* ⑤ 다시 도전: 조건 하나만 바꾸기 */
-  function stepRetry() {
-    const opts = G.sc === 'storm'
-      ? [['tide', TX.retry.tide(G.cond.storm.tide)], ['wind', TX.retry.wind(G.cond.storm.wind)]]
-      : [['left', TX.retry.left(G.cond.tsu.left)]];
-    return h('h4', 'g-h', TX.s5h) + h('p', 'g-p', TX.s5note) +
-      h('div', 'g-opts', opts.map(([k, t]) => `<button type="button" class="g-opt" data-change="${k}"><span class="ic" aria-hidden="true">↻</span><span class="tx">${t}</span></button>`).join('')) +
-      `<div class="g-row"><button class="btn" type="button" data-go="4">${TX.btn.back4}</button><div class="spacer"></div><button class="btn" type="button" data-other>${TX.btn.other(TX.scName[G.sc === 'storm' ? 'tsu' : 'storm'])}</button></div>`;
-  }
-
-  /* ---------- 조작 ---------- */
-  function bindPanel() {
-    panel.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => { if (G.sc === b.dataset.sc) return; G.sc = b.dataset.sc; G.changed = null; G.prev = null; G.result = null; render(); });
-    panel.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(+b.dataset.go));
-    panel.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { G.sub = b.dataset.sub; render(); });
-    panel.querySelectorAll('[data-shelter]').forEach(b => b.onclick = () => pickShelter(b.dataset.shelter));
-    panel.querySelectorAll('[data-next]').forEach(b => b.onclick = () => stepTo(b.dataset.next));
-    panel.querySelectorAll('[data-undo]').forEach(b => b.onclick = () => { if (G.path.length > 1) G.path.pop(); render(); });
-    panel.querySelectorAll('[data-clear]').forEach(b => b.onclick = () => { G.path = ['H']; render(); });
-    panel.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { const a = G.acts[G.sc], id = b.dataset.act, i = a.indexOf(id); if (i < 0) a.push(id); else a.splice(i, 1); render(); });
-    panel.querySelectorAll('[data-run]').forEach(b => b.onclick = run);
-    panel.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => finish());
-    panel.querySelectorAll('[data-replay]').forEach(b => b.onclick = run);
-    panel.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => fix(b.dataset.fix));
-    panel.querySelectorAll('[data-change]').forEach(b => b.onclick = () => changeCond(b.dataset.change));
-    panel.querySelectorAll('[data-other]').forEach(b => b.onclick = () => { G.sc = G.sc === 'storm' ? 'tsu' : 'storm'; G.changed = null; G.prev = null; G.result = null; G.step = 1; render(); });
-  }
-  function go(n) {
-    stopAnim();
-    if (n === 2 && !G.shelter) G.sub = 'shelter';
-    else if (n === 2) G.sub = routeDone() ? 'act' : 'route';
-    if (n === 4 && G.result) { G.step = 4; render(); showFinal(); return; }
-    G.step = n; render();
-  }
-  function pickShelter(id) {
-    G.shelter = id;
-    // 지금까지의 경로가 다른 대피 장소에서 끝나 있으면 그 장소 앞까지 되돌림 (나머지 경로는 그대로 이어 감)
-    if (SHELTERS.includes(G.path[G.path.length - 1]) && G.path[G.path.length - 1] !== id) G.path.pop();
-    G.sub = routeDone() ? 'act' : 'route'; render();
-  }
-  function stepTo(k) {
-    const last = G.path[G.path.length - 1];
-    if (G.path.length > 1 && k === G.path[G.path.length - 2]) { G.path.pop(); render(); return; }   // 바로 전 갈림길을 누르면 한 칸 되돌리기
-    if (routeDone()) { setCap(TX.cap.routeFull); return; }
-    if (!neighbors(last).includes(k) || G.path.includes(k)) { setCap(TX.cap.notLinked); flashHint(); return; }
-    if (SHELTERS.includes(k) && k !== G.shelter) { setCap(TX.cap.otherShelter(TX.place[k])); return; }
-    G.path.push(k); render();
-  }
-  let hintTimer = 0;
-  function flashHint() { gHit.classList.add('flash'); clearTimeout(hintTimer); hintTimer = setTimeout(() => gHit.classList.remove('flash'), 700); }
-  /* 지도에서 누를 수 있는 것: 대피 장소 후보(①) / 다음 갈림길(②) */
-  function hits() {
-    gHit.innerHTML = '';
-    const add = (n, cls, cb, r = 20) => { const c = E('circle', { cx: n.x, cy: n.y, r, class: 'hit ' + cls, tabindex: 0, role: 'button', 'aria-label': n.name }); c.addEventListener('click', cb); c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cb(); } }); gHit.appendChild(c); };
-    if (G.step !== 2) return;
-    if (G.sub === 'shelter') SHELTERS.forEach(id => add(NODES[id], 'cand' + (G.shelter === id ? ' sel' : ''), () => pickShelter(id), 24));
-    if (G.sub === 'route') {
-      const last = G.path[G.path.length - 1];
-      for (const k in NODES) {
-        if (k === 'H' && G.path.length === 1) continue;
-        const cand = !routeDone() && neighbors(last).includes(k) && !G.path.includes(k) && (!SHELTERS.includes(k) || k === G.shelter);
-        add(NODES[k], cand ? 'cand' : G.path.includes(k) ? 'onpath' : 'idle', () => stepTo(k), cand ? 20 : 14);
-      }
-    }
-  }
-  function fix(k) {
-    stopAnim();
-    if (k === 'cond') { G.step = 1; render(); return; }
-    G.step = 2; G.sub = k === 'shelter' ? 'shelter' : k === 'route' ? 'route' : 'act';
-    if (k === 'route') G.path = ['H'];
-    render();
-  }
-  function changeCond(k) {
-    G.prev = { sc: G.sc, cond: JSON.parse(JSON.stringify(G.cond[G.sc])), overall: G.lastFb ? G.lastFb.overall : null };
-    const c = G.cond[G.sc];
-    if (k === 'tide') c.tide = c.tide === 'high' ? 'low' : 'high';
-    if (k === 'wind') c.wind = c.wind === 'strong' ? 'weak' : 'strong';
-    if (k === 'left') c.left = c.left === 10 ? 30 : 10;
-    G.changed = k; G.result = null; G.step = 1; floodKey = ''; render();
-  }
-
-  /* ---------- 실행 애니메이션 (1분 = SEC 초) ---------- */
-  const SEC = .22;
-  function run() {
-    G.result = evaluate(); G.step = 3; G.anim = { t: 0 }; setPaused(false);
-    render(); drawResult(null);
-  }
-  function stopAnim() { G.anim = null; }
-  function posAt(R, t) {
-    for (const sg of R.tl) {
-      if (t > sg.t1 && sg !== R.tl[R.tl.length - 1]) continue;
-      if (sg.type === 'stay') return { p: sg.node, sg };
-      const f = clamp((t - sg.t0) / (sg.t1 - sg.t0), 0, 1), r = sg.road, pts = r.a === sg.a ? r.pts : r.pts.slice().reverse();
-      const seg = r.a === sg.a ? r.seg : r.seg.slice().reverse();
-      return { p: along(pts, seg, r.L, f), sg };
-    }
-    return { p: NODES[R.shelter], sg: null };
+    if (G.moved === null && Math.hypot(G.x - G.lv.start[0], G.y - G.lv.start[1]) > 8) G.moved = G.t;
+    const last = G.trail[G.trail.length - 1];
+    if (Math.hypot(G.x - last[0], G.y - last[1]) > 4) G.trail.push([G.x, G.y, G.t]);
   }
   function frame(dt) {
-    if (!G.anim || G.step !== 3) return;
-    const R = G.result; G.anim.t += dt / SEC;
-    const t = Math.min(G.anim.t, R.end);
-    const { p } = posAt(R, t);
-    marker.setAttribute('transform', `translate(${f1(p.x)},${f1(p.y)})`);
-    paintFlood(t);
-    // 지금 위치가 위험한지 (지점의 onset 과 비교)
-    const on = R.hz.onset(pointInfo(p.x, p.y)), atShelterV = t >= R.arrive && R.shelter === 'V';
-    const danger = t >= on && !(t >= R.arrive && R.shelter === 'P') && !atShelterV;
-    warn.style.display = danger ? '' : 'none'; warn.setAttribute('transform', `translate(${f1(p.x)},${f1(p.y)})`);
-    clock.hidden = false; clock.innerHTML = TX.clock(Math.floor(t), G.sc, R.hz.peak, G.sc === 'storm' ? R.hz.strong : false);
-    const tl = $('#g3-tl');
-    if (tl) G.runItems.forEach((it, i) => { const li = tl.children[i]; li.classList.toggle('on', t >= it.t0 && (t < it.t1 || (it.k === 'arrive' && t >= it.t0))); li.classList.toggle('done', t >= it.t1 && it.k !== 'arrive'); });
-    if (G.anim.t >= R.end + 1.5 / SEC) finish();   // 끝난 뒤 1.5 초 보여 주고 결과로
+    if (G.state !== 'play' || G.paused) return;
+    G.t += dt;
+    move(dt);
+    const lv = G.lv, rem = lv.T - G.t;
+    // 경보음: 남은 20초·10초
+    for (const s of [20, 10]) if (rem <= s && !G.beeped[s] && rem > 0) { G.beeped[s] = true; Snd.beep(); }
+    Snd.setWave(rem > 0 ? clamp(1 - rem / lv.T, 0, 1) * .8 : (G.t < FTMAX + 2 ? 1 : .35), G.t);
+    // 도착·침수 판정 (화면의 침수와 같은 FT 사용)
+    for (const id of lv.shelters) { const s = SHELTERS[id]; if (Math.hypot(G.x - s.x, G.y - s.y) < 14) { G.trail.push([G.x, G.y, G.t]); finish(true, id); return; } }
+    const ft = ftAt(G.x, G.y);
+    if (ft >= 0 && ft <= G.t) { G.trail.push([G.x, G.y, G.t]); finish(false, 'flood'); return; }
+    G.floodDone = G.t > FTMAX + 1;
+    hud(); draw();
   }
-  function showFinal() {
-    const R = G.result;
-    paintFlood(R.end); drawResult(R);
-    const n = NODES[R.shelter]; marker.setAttribute('transform', `translate(${n.x},${n.y})`);
-    // 처음 위험했던 곳 표시
-    const firstDanger = R.tl.flatMap(sg => sg.marks || []).filter(m => m.st === 'danger').sort((a, b) => a.t - b.t)[0];
-    warn.style.display = firstDanger ? '' : 'none';
-    if (firstDanger) warn.setAttribute('transform', `translate(${f1(firstDanger.p.x)},${f1(firstDanger.p.y)})`);
-    clock.hidden = false; clock.innerHTML = TX.clockEnd(G.sc);
-  }
-  function finish() { if (!G.result) return; G.anim = null; G.step = 4; render(); showFinal(); }
 
-  /* 지도 크기에 맞춰 누르는 원 크기 조정 (폰에서도 누르기 쉽게) */
-  function fitHit() { const s = stage.clientWidth / W; svg.style.setProperty('--hs', s ? Math.max(1, .55 / s).toFixed(2) : 1); }
-  if (window.ResizeObserver) new ResizeObserver(fitHit).observe(stage); else addEventListener('resize', fitHit);
-  render(); fitHit();
+  /* ---------- 그리기 (매 프레임) ---------- */
+  const floodCv = mk(FW, FH), fctx = floodCv.getContext('2d'), fimg = fctx.createImageData(FW, FH);
+  let floodKey = -1;
+  function paintFlood(t) {
+    const key = Math.round(t * 20); if (key === floodKey) return; floodKey = key;
+    const d = fimg.data;
+    for (let k = 0; k < FW * FH; k++) {
+      const o = k * 4, ft = ftCell(k);
+      if (ft < 0 || !(ft <= t)) { d[o + 3] = 0; continue; }
+      const fresh = t - ft < 1.2;   // 막 물이 닿은 가장자리는 밝게
+      d[o] = fresh ? 150 : 32; d[o + 1] = fresh ? 200 : 98; d[o + 2] = fresh ? 240 : 182; d[o + 3] = fresh ? 225 : 200;
+    }
+    fctx.putImageData(fimg, 0, 0);
+  }
+  function draw() {
+    const lv = G.lv, t = G.t;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.drawImage(baseCv, 0, 0, W, H);
+    // 다가오는 해일 (도달 전): 해안선 모양을 따라 바다 아래쪽에서 해안으로
+    if (t < lv.T) {
+      const p = t / lv.T, wy = x => { const cy = coastY(x); return cy + (H + 24 - cy) * (1 - p) + 4 * Math.sin(x / 30 + t * 2); };
+      ctx.beginPath(); for (let x = 0; x <= W; x += 8) x ? ctx.lineTo(x, wy(x)) : ctx.moveTo(x, wy(x));
+      ctx.lineTo(W, H + 30); ctx.lineTo(0, H + 30); ctx.closePath();
+      ctx.fillStyle = 'rgba(16,62,120,.45)'; ctx.fill();
+      ctx.beginPath(); for (let x = 0; x <= W; x += 8) x ? ctx.lineTo(x, wy(x)) : ctx.moveTo(x, wy(x));
+      ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
+      if (G.state !== 'ready' && p < .97) { const y = wy(300); if (y < H - 6) label(ctx, TX.map.wave, 300, y - 14, { fs: 14, bg: '#1E5A85', color: '#fff' }); }
+    }
+    // 침수 (FT 하나로 그림)
+    // 결과 화면: 이 조건에서 물이 결국 닿는 곳 전체(게임 속 최종 침수 구간)를 옅게 겹쳐 보여 줌
+    if (G.state === 'done') { paintFlood(FTMAX + 2); ctx.globalAlpha = .55; ctx.drawImage(floodCv, 0, 0, W, FH * FC); ctx.globalAlpha = 1; }
+    else if (t >= lv.T) { paintFlood(t); ctx.imageSmoothingEnabled = true; ctx.drawImage(floodCv, 0, 0, W, FH * FC); }
+    // 지정 대피 장소 강조 (천천히 커졌다 작아지는 원 — 번쩍임 없음)
+    if (G.state === 'play') for (const id of lv.shelters) { const s = SHELTERS[id], r = 22 + 3 * Math.sin(t * 2.4); ctx.beginPath(); ctx.arc(s.x, s.y - 2, r, 0, 7); ctx.strokeStyle = 'rgba(47,143,91,.75)'; ctx.lineWidth = 3; ctx.stroke(); }
+    // 이동한 길
+    if (G.trail.length > 1) { ctx.beginPath(); G.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = G.state === 'done' ? '#7B4FB0' : 'rgba(123,79,176,.55)'; ctx.lineWidth = G.state === 'done' ? 4.5 : 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(); }
+    // 출발점
+    const [sx, sy] = lv.start; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fillStyle = '#7B4FB0'; ctx.fill();
+    // 캐릭터: 주황 원 + 흰 테두리 + 진행 방향 표시
+    ctx.save(); ctx.translate(G.x, G.y);
+    ctx.beginPath(); ctx.arc(0, 0, PR + 4, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, PR + 1, 0, 7); ctx.fillStyle = G.state === 'done' && !G.result.ok ? '#7B8792' : '#E8553E'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
+    ctx.rotate(G.dir); ctx.beginPath(); ctx.moveTo(PR + 6, 0); ctx.lineTo(PR + 1, -4); ctx.lineTo(PR + 1, 4); ctx.closePath(); ctx.fillStyle = INK; ctx.fill();
+    ctx.restore();
+    // 결과 표시: 중요한 지점 번호
+    if (G.state === 'done' && G.result) G.result.marks.forEach((m, i) => { ctx.beginPath(); ctx.arc(m[0], m[1], 11, 0, 7); ctx.fillStyle = '#F2B233'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = INK; ctx.font = '13px Jua, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), m[0], m[1] + 1); });
+  }
+
+  /* ---------- 위쪽 표시줄: 남은 시간 · 목표 · 일시 정지 · 소리 ---------- */
+  const elTime = $('#g3-time'), elGoal = $('#g3-goal'), elPause = $('#g3-pause'), game = $('#game3');
+  let hudKey = '';
+  function hud() {
+    const lv = G.lv, rem = lv.T - G.t;
+    let phase, tt;
+    if (G.state === 'done') { phase = G.result.ok ? 'ok' : 'stop'; tt = G.result.ok ? TX.hud.done : TX.hud.stop; }
+    else if (rem > 0) { phase = rem / lv.T > .5 ? 'calm' : rem / lv.T > .25 ? 'warn' : 'danger'; tt = TX.hud.left(Math.ceil(rem)); }
+    else { phase = 'flood'; tt = G.floodDone ? TX.hud.flooded : TX.hud.arrived; }
+    const goal = G.state === 'ready' ? TX.hud.goalReady : G.state === 'done' ? (G.result.ok ? TX.hud.goalOk : TX.hud.goalStop) : G.floodDone ? TX.hud.goalAfter : TX.hud.goal;
+    const bar = G.state === 'ready' ? 1 : clamp(rem / lv.T, 0, 1);
+    const key = [phase, tt, goal, bar.toFixed(3), G.paused, G.state].join('|'); if (key === hudKey) return; hudKey = key;
+    game.dataset.phase = phase;
+    elTime.querySelector('b').textContent = tt; elTime.querySelector('i').style.width = (bar * 100).toFixed(1) + '%';
+    elGoal.textContent = goal;
+    elPause.disabled = G.state !== 'play'; elPause.textContent = G.paused ? TX.hud.resume : TX.hud.pause;
+  }
+
+  /* ---------- 결과 분석: 중요한 지점 1~2개 ---------- */
+  function analyse(ok, why) {
+    const lv = G.lv, roads = roadsOf(lv), notes = [], marks = [];
+    const nameAt = (x, y) => { const r = nearestRoad(x, y, roads); return r ? r.name : ''; };
+    const delay = G.moved === null ? G.t : G.moved;
+    if (!ok) {
+      const e = Math.max(1, Math.round(elev(G.x, G.y)));
+      marks.push([G.x, G.y]); notes.push(G.moved === null ? TX.note.stay(e, Math.round(G.t)) : TX.note.fail(nameAt(G.x, G.y), e, Math.round(G.t)));
+      notes.push(delay >= 5 ? TX.note.late(Math.round(delay)) : TX.note.tryHigh);
+    } else {
+      // 지나간 길 가운데 물이 닿기까지 여유가 가장 짧았던 곳
+      let best = null;
+      for (const [x, y, t] of G.trail) { const ft = ftAt(x, y); if (ft > 0 && isFinite(ft)) { const m = ft - t; if (!best || m < best.m) best = { x, y, m }; } }
+      if (best) { marks.push([best.x, best.y]); const nm = nameAt(best.x, best.y), e = Math.max(1, Math.round(elev(best.x, best.y))); notes.push(best.m < 10 ? TX.note.close(nm, e, Math.max(0, Math.round(best.m))) : TX.note.safeLow(nm, e, Math.round(best.m))); }
+      else notes.push(TX.note.allHigh);
+      notes.push(delay >= 5 ? TX.note.lateOk(Math.round(delay)) : why === 'bldg' ? TX.note.bldg : TX.note.quick);
+    }
+    return { ok, why, notes: notes.slice(0, 2), marks: marks.slice(0, 2), time: Math.round(G.t) };
+  }
+
+  /* ---------- 지도 옆(좁은 화면은 아래) 안내판: 시작 · 진행 · 결과 ---------- */
+  const side = $('#g3-side');
+  function renderSide() {
+    const lv = G.lv;
+    let h = '';
+    if (G.state === 'ready') {
+      h = `<h4 class="g-h">${TX.side.title}</h4>
+        <div class="g-levels" role="radiogroup" aria-label="${TX.side.levelQ}">${MODE.levels.map((l, i) => `<button type="button" class="g-opt" role="radio" aria-checked="${i === G.li}" data-lv="${i}"><span class="tx">${TX.level[l.id].name}<small>${TX.level[l.id].sub(l.T)}</small></span></button>`).join('')}
+        <button type="button" class="g-opt" disabled><span class="tx">${TX.side.storm}<small>${TX.side.stormSub}</small></span></button></div>
+        <ul class="g-howto"><li><b>${TX.side.goalL}</b> ${TX.side.goal}</li><li><b>${TX.side.keyL}</b> ${TX.side.keys}</li><li><b>${TX.side.mapL}</b> ${TX.side.map}</li></ul>
+        <p class="g-note">${TX.side.note}</p>
+        <button class="btn primary g-go" type="button" data-start>${TX.side.start}</button>`;
+    } else if (G.state === 'play') {
+      h = `<h4 class="g-h">${TX.level[lv.id].name}</h4><p class="g-p">${TX.side.playHint}</p>${dpadHTML()}`;
+    } else {
+      const R = G.result;
+      h = `<div class="verdict ${R.ok ? 'ok' : 'bad'}">${R.ok ? TX.side.okTitle(TX.shelter[R.why], R.time) : TX.side.stopTitle}</div>
+        <ol class="g-notes">${R.notes.map((n, i) => `<li><span class="n">${R.marks[i] ? i + 1 : '·'}</span><span>${n}</span></li>`).join('')}</ol>
+        <p class="g-note">${TX.side.resultNote}</p>
+        <div class="g-row"><button class="btn primary" type="button" data-again>${TX.side.again}</button><button class="btn" type="button" data-other>${TX.side.other}</button></div>`;
+    }
+    side.innerHTML = h;
+    side.querySelectorAll('[data-lv]').forEach(b => b.onclick = () => { setLevel(+b.dataset.lv); side.querySelector(`[data-lv="${b.dataset.lv}"]`).focus(); });
+    side.querySelectorAll('[data-start]').forEach(b => b.onclick = start);
+    side.querySelectorAll('[data-again]').forEach(b => b.onclick = () => { reset(); start(); });
+    side.querySelectorAll('[data-other]').forEach(b => b.onclick = () => { reset(); side.querySelector('[data-lv]').focus(); });
+    bindDpad();
+  }
+  const dpadHTML = () => `<div class="dpad" id="dpad3" aria-label="${TX.side.pad}">${[['up', '▲'], ['left', '◀'], ['right', '▶'], ['down', '▼']].map(([d, s]) => `<button type="button" data-dir="${d}" aria-label="${TX.side.dir[d]}">${s}</button>`).join('')}</div>`;
+  function bindDpad() {
+    side.querySelectorAll('#dpad3 [data-dir]').forEach(b => {
+      const d = b.dataset.dir, on = v => e => { e.preventDefault(); if (v && (G.state !== 'play' || G.paused)) return; keys[d] = v; b.classList.toggle('on', v); if (v && b.setPointerCapture) b.setPointerCapture(e.pointerId); };
+      b.addEventListener('pointerdown', on(true)); ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, on(false)));
+      b.addEventListener('contextmenu', e => e.preventDefault());
+    });
+  }
+
+  /* ---------- 키보드: 게임 탭에서는 방향키·스페이스로 페이지가 움직이지 않게 ---------- */
+  const KEY = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+  addEventListener('keydown', e => {
+    if (activeTab !== '3' || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const k = KEY[e.code];
+    if (k) { if (G.state === 'play' || e.code.startsWith('Arrow')) e.preventDefault(); if (G.state === 'play' && !G.paused) keys[k] = true; return; }
+    if (e.code === 'Space' && G.state === 'play') e.preventDefault();
+    if ((e.code === 'KeyP' || e.code === 'Escape') && G.state === 'play') { e.preventDefault(); setGamePause(!G.paused); }
+  });
+  addEventListener('keyup', e => { const k = KEY[e.code]; if (k) keys[k] = false; });
+  addEventListener('blur', clearKeys);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && G.state === 'play' && !G.paused) setGamePause(true); });
+  elPause.onclick = () => setGamePause(!G.paused);
+  const sndBtn = $('#g3-sound');
+  sndBtn.textContent = TX.hud.sound; bindToggle(sndBtn, v => Snd.setOn(v));
+  $('#g3-paused').textContent = TX.hud.pausedMsg;
+
+  /* 범례·참고 자료 (게임 밖) */
+  $('#leg3').innerHTML = TX.legend.map(([sw, t]) => `<li>${sw}<span>${t}</span></li>`).join('');
+  $('#t3-h-src').textContent = TX.hSrc; $('#t3-h-leg').textContent = TX.hLeg; cv.setAttribute('aria-label', TX.mapAria); $('#t3-src').innerHTML = TX.sources;
+
+  /* 자동 점검 스크립트용 연결 */
+  window.__haeil = { G, keys, setLevel, start, reset, setGamePause, walkable, ftAt, elev, levels: MODE.levels, shelters: SHELTERS, SPEED, WC, WW, WH, get WALK() { return WALK; }, get FTMAX() { return FTMAX; } };
+
+  setLevel(0);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { drawBase(G.lv); draw(); });
   frames['3'] = frame;
-  tabInit['3'] = () => { fitHit(); };
+  tabInit['3'] = () => draw();
+  tabLeave['3'] = () => { if (G.state === 'play' && !G.paused) setGamePause(true); };
 })();
