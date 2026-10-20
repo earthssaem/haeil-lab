@@ -62,15 +62,18 @@
   const MODES = {
     tsunami: {
       levels: [
-        { id: 'p', T: 54, L: 7, start: [560, 300], shelters: ['park', 'school'], closed: [] },
-        { id: 'harbor', T: 20, L: 7.5, start: [700, 374], shelters: ['park', 'school'], closed: [] },
-        { id: 'west', T: 26, L: 7.5, start: [270, 345], shelters: ['school', 'bldg'], closed: ['mainBr'] },
-        { id: 'short', T: 19, L: 7, start: [585, 404], shelters: ['park', 'school', 'bldg'], closed: [] },
+        { id: 'p', T: 22, L: 7, start: [560, 300], shelters: ['park', 'school'], closed: [] },
+        { id: 'harbor', T: 9.5, L: 7.5, start: [700, 374], shelters: ['park', 'school'], closed: [] },
+        { id: 'debris', T: 10, L: 7.5, start: [200, 413], shelters: ['park', 'school'], closed: [], debris: [[80, 352], [270, 245]] },
+        { id: 'west', T: 10, L: 7.5, start: [270, 345], shelters: ['school', 'bldg'], closed: ['mainBr'] },
+        { id: 'crowd', T: 9, L: 7.5, start: [640, 340], shelters: ['park'], closed: [], crowd: [[418, 190, 26]] },
+        { id: 'short', T: 9.5, L: 7, start: [585, 404], shelters: ['park', 'school', 'bldg'], closed: [] },
       ],
     },
   };
   const MODE = MODES.tsunami;
-  const SPEED = 15;          // 걷는 속도 (px/s)
+  const SPEED = 36;          // 걷는 속도 (px/s) — 키를 누르면 0.12초 안에 이 속도에 이름
+  const NPC_SPEED = SPEED * .78;   // 함께 대피하는 주민
   const PR = 6;              // 캐릭터 반지름 (그림)
 
   /* ---------- 캔버스 ---------- */
@@ -115,7 +118,7 @@
     const pop = () => { const k = hk[0], v = hv[0], lk = hk.pop(), lv = hv.pop(); if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0; for (;;) { const a = 2 * i + 1, b = a + 1; let m = i; if (a < hk.length && hv[a] < hv[m]) m = a; if (b < hk.length && hv[b] < hv[m]) m = b; if (m === i) break; [hk[m], hk[i]] = [hk[i], hk[m]]; [hv[m], hv[i]] = [hv[i], hv[m]]; i = m; } } return [k, v]; };
     // 해일이 해안에 닿는 시각 T: 바다 칸에서 출발
     for (let k = 0; k < FW * FH; k++) if (FTY[k] === 2) { FT[k] = T; push(k, T); }
-    const speed = k => FTY[k] === 1 ? 58 : 4 + 19 * (1 - FE[k] / L);   // px/s: 하천은 빠르게, 땅은 높을수록 느리게
+    const speed = k => FTY[k] === 1 ? 140 : 10 + 45 * (1 - FE[k] / L);   // px/s: 하천은 빠르게, 땅은 높을수록 느리게
     while (hk.length) {
       const [k, v] = pop(); if (v > FT[k]) continue;
       const i = k % FW, j = (k / FW) | 0;
@@ -146,6 +149,7 @@
     g.beginPath(); g.arc(lv.start[0], lv.start[1], 8, 0, 7); g.fill();
     g.globalCompositeOperation = 'destination-out';      // 통행 금지 구간
     for (const id of lv.closed) { const p = closedAt(id); g.beginPath(); g.arc(p[0], p[1], 9, 0, 7); g.fill(); }
+    for (const [x, y] of lv.debris || []) { g.beginPath(); g.arc(x, y, 11, 0, 7); g.fill(); }   // 지진으로 무너진 담장
     const d = g.getImageData(0, 0, WW, WH).data, bridgeMask = mk(WW, WH), bg = bridgeMask.getContext('2d');
     bg.scale(1 / WC, 1 / WC); bg.lineWidth = 16; bg.lineCap = 'butt';
     for (const r of roadsOf(lv)) if (r.bridge && !lv.closed.includes(r.id)) { bg.beginPath(); r.pts.forEach(([x, y], i) => i ? bg.lineTo(x, y) : bg.moveTo(x, y)); bg.stroke(); }
@@ -158,6 +162,16 @@
       WALK[k] = 1;
     }
   }
+  /* 가장 가까운 도로 구간: 방향(ux, uy)과 그 위의 가장 가까운 점(cx, cy) */
+  let SEGS = [];
+  const buildSegs = lv => { SEGS = []; for (const r of roadsOf(lv)) for (let i = 1; i < r.pts.length; i++) { const [ax, ay] = r.pts[i - 1], [bx, by] = r.pts[i], l = Math.hypot(bx - ax, by - ay); SEGS.push({ ax, ay, bx, by, ux: (bx - ax) / l, uy: (by - ay) / l, l }); } };
+  function nearSeg(x, y) {
+    let best = null, bd = 12;
+    for (const g of SEGS) { const t = clamp((x - g.ax) * g.ux + (y - g.ay) * g.uy, 0, g.l), cx = g.ax + g.ux * t, cy = g.ay + g.uy * t, d = Math.hypot(x - cx, y - cy); if (d < bd) { bd = d; best = { ux: g.ux, uy: g.uy, cx, cy }; } }
+    return best;
+  }
+  /* 사람들로 혼잡한 곳: 걷는 속도가 느려짐 (시작부터 보임) */
+  const slowAt = (x, y) => { for (const [cx, cy, r] of G.lv.crowd || []) if (Math.hypot(x - cx, y - cy) < r) return .35; return 1; };
   const walkable = (x, y) => x >= 0 && y >= 0 && x < W && y < H && WALK[Math.floor(y / WC) * WW + Math.floor(x / WC)] === 1;
   const roadsOf = lv => ROADS.filter(r => !r.only || lv.shelters.includes(r.only));
   const closedAt = id => { const r = ROADS.find(q => q.id === id), a = r.pts[0], b = r.pts[r.pts.length - 1]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
@@ -221,6 +235,13 @@
     label(g, TX.map.risk, 532, 352, { fs: 12, bg: '#D3E6F6', color: '#1E5A85' });
     // 지정 대피 장소
     for (const id of lv.shelters) shelterIcon(g, SHELTERS[id]);
+    // 무너진 담장(지나갈 수 없음)
+    for (const [x, y] of lv.debris || []) {
+      g.fillStyle = '#A1887F'; g.strokeStyle = INK; g.lineWidth = 1.5;
+      for (const [dx, dy, r] of [[-6, -2, 6], [4, 3, 7], [7, -5, 5], [-2, 6, 5], [-8, 5, 4]]) { g.beginPath(); g.moveTo(x + dx - r, y + dy); g.lineTo(x + dx - r * .3, y + dy - r); g.lineTo(x + dx + r, y + dy - r * .4); g.lineTo(x + dx + r * .6, y + dy + r * .8); g.closePath(); g.fill(); g.stroke(); }
+      label(g, TX.map.debris, x + (x < 150 ? 52 : 0), y - 20, { fs: 12, bg: '#EFE3D7' });
+    }
+    for (const [x, y, r] of lv.crowd || []) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = 'rgba(242,178,51,.22)'; g.fill(); g.setLineDash([4, 4]); g.strokeStyle = '#B7791F'; g.lineWidth = 1.5; g.stroke(); g.setLineDash([]); label(g, TX.map.crowd, x, y - r - 12, { fs: 12, bg: '#FFF3D6' }); }
   }
   function label(g, text, x, y, o = {}) {
     g.font = `${o.fs || 14}px Jua, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -270,17 +291,21 @@
   };
 
   /* ---------- 게임 상태 ---------- */
-  const G = { li: 0, lv: null, state: 'ready', paused: false, t: 0, x: 0, y: 0, dir: 0, trail: [], moved: null, beeped: {}, result: null, floodDone: false };
+  const G = { li: 0, lv: null, state: 'ready', paused: false, t: 0, x: 0, y: 0, dir: 0, ramp: 0, walk: 0, trail: [], moved: null, beeped: {}, result: null, floodDone: false, npcs: [], saved: 0 };
   const keys = { up: false, down: false, left: false, right: false };
   const clearKeys = () => { for (const k in keys) keys[k] = false; $$('#dpad3 button').forEach(b => b.classList.remove('on')); };
+  /* 단계별 별 (이 기기의 브라우저에만 저장, 못 쓰면 저장 없이 진행) */
+  const STAR_KEY = 'haeil.stars.v1';
+  let STARS = {}; try { STARS = JSON.parse(localStorage.getItem(STAR_KEY) || '{}') || {}; } catch (e) { STARS = {}; }
+  const saveStars = () => { try { localStorage.setItem(STAR_KEY, JSON.stringify(STARS)); } catch (e) { /* 저장 못 해도 게임은 그대로 */ } };
   function setLevel(i) {
     G.li = i; G.lv = MODE.levels[i];
-    computeFlood(G.lv.T, G.lv.L); buildWalk(G.lv); drawBase(G.lv);
+    computeFlood(G.lv.T, G.lv.L); buildWalk(G.lv); buildSegs(G.lv); drawBase(G.lv); planNpcs(G.lv);
     reset();
   }
   function reset() {
     const lv = G.lv;
-    Object.assign(G, { state: 'ready', paused: false, t: 0, x: lv.start[0], y: lv.start[1], dir: -Math.PI / 2, trail: [[lv.start[0], lv.start[1], 0]], moved: null, beeped: {}, result: null, floodDone: false });
+    Object.assign(G, { state: 'ready', paused: false, t: 0, x: lv.start[0], y: lv.start[1], dir: -Math.PI / 2, ramp: 0, walk: 0, trail: [[lv.start[0], lv.start[1], 0]], moved: null, beeped: {}, result: null, floodDone: false, saved: 0 });
     clearKeys(); Snd.quiet(); floodKey = -1;
     $('#g3-paused').hidden = true;
     renderSide(); hud(); draw();
@@ -301,31 +326,82 @@
   function finish(ok, why) {
     G.state = 'done'; clearKeys();
     G.result = analyse(ok, why);
+    if (ok) { const id = G.lv.id; STARS[id] = Math.max(STARS[id] || 0, G.result.stars.filter(Boolean).length); saveStars(); }
     ok ? Snd.chime() : Snd.low(); Snd.quiet();
     renderSide(); hud(); draw();
   }
 
-  /* ---------- 이동 (프레임 시간 비례 · 대각선 정규화 · 길을 따라 미끄러짐) ---------- */
+  /* ---------- 함께 대피하는 주민: 대피 장소까지의 거리 지도(흐름장)를 따라 걸음. 시작 전에 침수 시각표로 안전한 사람만 남김 ---------- */
+  const NPC_SPOTS = [[150, 300], [330, 300], [600, 300], [740, 300], [880, 300], [330, 190], [640, 190], [760, 190], [270, 380], [640, 340], [800, 350], [150, 412], [560, 404], [860, 410]];
+  function planNpcs(lv) {
+    const N = WW * WH, D = new Float64Array(N).fill(Infinity), NX = new Int32Array(N).fill(-1), hk = [], hv = [];
+    const push = (k, v) => { hk.push(k); hv.push(v); let i = hk.length - 1; while (i > 0) { const q = (i - 1) >> 1; if (hv[q] <= hv[i]) break; [hk[q], hk[i]] = [hk[i], hk[q]]; [hv[q], hv[i]] = [hv[i], hv[q]]; i = q; } };
+    const pop = () => { const k = hk[0], v = hv[0], lk = hk.pop(), lv2 = hv.pop(); if (hk.length) { hk[0] = lk; hv[0] = lv2; let i = 0; for (;;) { const a = 2 * i + 1, c = a + 1; let m = i; if (a < hk.length && hv[a] < hv[m]) m = a; if (c < hk.length && hv[c] < hv[m]) m = c; if (m === i) break; [hk[m], hk[i]] = [hk[i], hk[m]]; [hv[m], hv[i]] = [hv[i], hv[m]]; i = m; } } return [k, v]; };
+    for (const id of lv.shelters) { const sh = SHELTERS[id]; for (let j = -7; j <= 7; j++) for (let i = -7; i <= 7; i++) { const x = sh.x + i * WC, y = sh.y + j * WC; if (Math.hypot(i * WC, j * WC) < 12 && walkable(x, y)) { const k = Math.floor(y / WC) * WW + Math.floor(x / WC); D[k] = 0; push(k, 0); } } }
+    while (hk.length) {
+      const [k, d] = pop(); if (d > D[k]) continue;
+      const i = k % WW, j = (k / WW) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue; const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= WW || nj >= WH) continue;
+        const n = nj * WW + ni; if (!WALK[n]) continue;
+        const nd = d + (di && dj ? 1.414 : 1) * WC / slowAt(ni * WC + 1, nj * WC + 1);
+        if (nd < D[n]) { D[n] = nd; NX[n] = k; push(n, nd); }
+      }
+    }
+    G.npcs = [];
+    NPC_SPOTS.forEach(([x0, y0], q) => {
+      if (!walkable(x0, y0) || Math.hypot(x0 - lv.start[0], y0 - lv.start[1]) < 50) return;
+      let k = Math.floor(y0 / WC) * WW + Math.floor(x0 / WC); if (!isFinite(D[k])) return;
+      const delay = .4 + (q % 4) * .5, pts = [[x0, y0, delay]]; let t = delay, safe = true, steps = 0;
+      while (NX[k] >= 0 && steps++ < 5000) {
+        const n = NX[k], x = (n % WW) * WC + 1, y = ((n / WW) | 0) * WC + 1, px = (k % WW) * WC + 1, py = ((k / WW) | 0) * WC + 1;
+        t += Math.hypot(x - px, y - py) / (NPC_SPEED * slowAt(x, y));
+        const ft = ftAt(x, y); if (ft >= 0 && ft <= t + 1.5) { safe = false; break; }
+        if (steps % 3 === 0 || NX[n] < 0) pts.push([x, y, t]);
+        k = n;
+      }
+      if (safe && pts.length > 2) G.npcs.push({ pts, end: t, col: ['#7FB3E0', '#8FCB9B', '#B3A4D6', '#F2C46B'][q % 4] });
+    });
+    G.npcs = G.npcs.slice(0, 7);
+  }
+  const npcAt = (n, t) => { const P = n.pts; if (t <= P[0][2]) return P[0]; for (let i = 1; i < P.length; i++) if (t <= P[i][2]) { const f = (t - P[i - 1][2]) / (P[i][2] - P[i - 1][2]); return [lerp(P[i - 1][0], P[i][0], f), lerp(P[i - 1][1], P[i][1], f), Math.atan2(P[i][1] - P[i - 1][1], P[i][0] - P[i - 1][0])]; } return null; };
+
+  /* ---------- 이동 (프레임 시간 비례 · 대각선 정규화 · 길을 따라 미끄러짐 · 누르면 바로 빨라짐) ---------- */
   function move(dt) {
     let ix = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), iy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
-    if (!ix && !iy) return;
+    if (!ix && !iy) { G.ramp = 0; return; }
+    G.ramp = Math.min(1, G.ramp + dt / .12);
     const n = Math.hypot(ix, iy); ix /= n; iy /= n;
     const base = Math.atan2(iy, ix);
-    let rest = SPEED * dt;
+    let rest = SPEED * (.35 + .65 * G.ramp) * slowAt(G.x, G.y) * dt, moved = 0;
     while (rest > 1e-6) {
       const step = Math.min(rest, 1.5); rest -= step;
       let done = false;
-      // 막히면: 가까운 방향(±17°·±34°) → 가로·세로 축으로 미끄러지기(대각선 입력) → 더 꺾인 방향(±52°·±69°, 비스듬한 길)
-      const cands = [0, .3, -.3, .6, -.6];
-      if (ix && iy) cands.push(Math.atan2(0, ix) - base, Math.atan2(iy, 0) - base);
-      cands.push(.9, -.9, 1.2, -1.2);
-      for (const da of cands) {
-        const a = base + da, nx = G.x + Math.cos(a) * step, ny = G.y + Math.sin(a) * step;
-        if (walkable(nx, ny)) { G.x = nx; G.y = ny; G.dir = a; done = true; break; }
+      const tx = G.x + ix * step, ty = G.y + iy * step;
+      if (walkable(tx, ty)) { G.x = tx; G.y = ty; G.dir = base; done = true; moved += step; }
+      else {
+        // 막히면: 가장 가까운 도로의 진행 방향(입력과 같은 쪽)을 따라 가면서 도로 가운데로 조금 당김 → 비스듬한 길도 떨림 없이 따라감
+        const sg = nearSeg(G.x, G.y);
+        if (sg) {
+          const dot = ix * sg.ux + iy * sg.uy;
+          if (Math.abs(dot) > .25) {
+            const sgn = Math.sign(dot), cx = sg.cx - G.x, cy = sg.cy - G.y, cl = Math.hypot(cx, cy), pull = Math.min(cl, step * .5);
+            const mx = sg.ux * sgn * step + (cl ? cx / cl * pull : 0), my = sg.uy * sgn * step + (cl ? cy / cl * pull : 0), ml = Math.hypot(mx, my);
+            const nx = G.x + mx / ml * step, ny = G.y + my / ml * step;
+            if (walkable(nx, ny)) { G.x = nx; G.y = ny; G.dir = Math.atan2(my, mx); done = true; moved += step; }
+            else if (cl > .3) { const q = Math.min(cl, step); G.x += cx / cl * q; G.y += cy / cl * q; done = true; moved += q; }   // 길 가장자리 칸에 걸리면 먼저 가운데 쪽으로 비켜 섬
+          }
+        }
+        // 그래도 막히면 가까운 방향부터 시험 (광장·모퉁이)
+        if (!done) for (const da of [.3, -.3, .6, -.6, .9, -.9]) {
+          const a = base + da, nx = G.x + Math.cos(a) * step, ny = G.y + Math.sin(a) * step;
+          if (walkable(nx, ny)) { G.x = nx; G.y = ny; G.dir = a; done = true; moved += step; break; }
+        }
       }
       if (!done) break;
     }
-    if (G.moved === null && Math.hypot(G.x - G.lv.start[0], G.y - G.lv.start[1]) > 8) G.moved = G.t;
+    G.walk += moved * .45;
+    if (G.moved === null && Math.hypot(G.x - G.lv.start[0], G.y - G.lv.start[1]) > 6) G.moved = G.t;
     const last = G.trail[G.trail.length - 1];
     if (Math.hypot(G.x - last[0], G.y - last[1]) > 4) G.trail.push([G.x, G.y, G.t]);
   }
@@ -334,63 +410,77 @@
     G.t += dt;
     move(dt);
     const lv = G.lv, rem = lv.T - G.t;
-    // 경보음: 남은 20초·10초
-    for (const s of [20, 10]) if (rem <= s && !G.beeped[s] && rem > 0) { G.beeped[s] = true; Snd.beep(); }
+    // 경보음: 남은 5초·3초 (판이 짧아져서)
+    for (const s of [5, 3]) if (rem <= s && !G.beeped[s] && rem > 0) { G.beeped[s] = true; Snd.beep(); }
     Snd.setWave(rem > 0 ? clamp(1 - rem / lv.T, 0, 1) * .8 : (G.t < FTMAX + 2 ? 1 : .35), G.t);
+    G.saved = G.npcs.filter(n => G.t >= n.end).length;
     // 도착·침수 판정 (화면의 침수와 같은 FT 사용)
     for (const id of lv.shelters) { const s = SHELTERS[id]; if (Math.hypot(G.x - s.x, G.y - s.y) < 14) { G.trail.push([G.x, G.y, G.t]); finish(true, id); return; } }
     const ft = ftAt(G.x, G.y);
     if (ft >= 0 && ft <= G.t) { G.trail.push([G.x, G.y, G.t]); finish(false, 'flood'); return; }
     G.floodDone = G.t > FTMAX + 1;
-    hud(); draw();
+    hud(); draw(); sideLive();
   }
 
   /* ---------- 그리기 (매 프레임) ---------- */
   const floodCv = mk(FW, FH), fctx = floodCv.getContext('2d'), fimg = fctx.createImageData(FW, FH);
   let floodKey = -1;
   function paintFlood(t) {
-    const key = Math.round(t * 20); if (key === floodKey) return; floodKey = key;
+    const key = Math.round(t * 30); if (key === floodKey) return; floodKey = key;
     const d = fimg.data;
     for (let k = 0; k < FW * FH; k++) {
       const o = k * 4, ft = ftCell(k);
       if (ft < 0 || !(ft <= t)) { d[o + 3] = 0; continue; }
-      const fresh = t - ft < 1.2;   // 막 물이 닿은 가장자리는 밝게
-      d[o] = fresh ? 150 : 32; d[o + 1] = fresh ? 200 : 98; d[o + 2] = fresh ? 240 : 182; d[o + 3] = fresh ? 225 : 200;
+      const age = t - ft;   // 막 물이 닿은 가장자리: 흰 물거품 → 밝은 물 → 깊은 물
+      if (age < .35) { d[o] = 240; d[o + 1] = 248; d[o + 2] = 255; d[o + 3] = 240; }
+      else if (age < 1.2) { d[o] = 120; d[o + 1] = 186; d[o + 2] = 236; d[o + 3] = 225; }
+      else { const w = 8 * Math.sin((k % FW) * .5 + ((k / FW) | 0) * .3 - t * 3); d[o] = 30 + w; d[o + 1] = 96 + w; d[o + 2] = 180 + w; d[o + 3] = 205; }
     }
     fctx.putImageData(fimg, 0, 0);
+  }
+  function person(x, y, dir, col, sc, phase, outline) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(dir);
+    ctx.beginPath(); ctx.ellipse(1, 2, 7 * sc, 5 * sc, 0, 0, 7); ctx.fillStyle = 'rgba(36,48,58,.22)'; ctx.fill();   // 그림자
+    const st = Math.sin(phase) * 3.2 * sc;                                                                               // 걸음
+    ctx.fillStyle = INK; for (const [fx, fy] of [[st, -2.6 * sc], [-st, 2.6 * sc]]) { ctx.beginPath(); ctx.ellipse(fx, fy, 2.4 * sc, 1.7 * sc, 0, 0, 7); ctx.fill(); }
+    ctx.beginPath(); ctx.ellipse(0, 0, 4.2 * sc, 6.4 * sc, 0, 0, 7); ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = outline; ctx.stroke();   // 어깨
+    ctx.beginPath(); ctx.arc(.8 * sc, 0, 3.3 * sc, 0, 7); ctx.fillStyle = '#3B2F2A'; ctx.fill();                      // 머리
+    ctx.restore();
   }
   function draw() {
     const lv = G.lv, t = G.t;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.drawImage(baseCv, 0, 0, W, H);
-    // 다가오는 해일 (도달 전): 해안선 모양을 따라 바다 아래쪽에서 해안으로
+    // 다가오는 해일 (도달 전): 여러 겹의 물마루가 해안선 모양을 따라 바다 아래쪽에서 해안으로
     if (t < lv.T) {
-      const p = t / lv.T, wy = x => { const cy = coastY(x); return cy + (H + 24 - cy) * (1 - p) + 4 * Math.sin(x / 30 + t * 2); };
-      ctx.beginPath(); for (let x = 0; x <= W; x += 8) x ? ctx.lineTo(x, wy(x)) : ctx.moveTo(x, wy(x));
+      const p = t / lv.T, wy = (x, q) => { const cy = coastY(x); return cy + (H + 24 - cy) * (1 - p) + q + 4 * Math.sin(x / 30 + t * 2.4 - q * .1); };
+      ctx.beginPath(); for (let x = 0; x <= W; x += 8) x ? ctx.lineTo(x, wy(x, 0)) : ctx.moveTo(x, wy(x, 0));
       ctx.lineTo(W, H + 30); ctx.lineTo(0, H + 30); ctx.closePath();
-      ctx.fillStyle = 'rgba(16,62,120,.45)'; ctx.fill();
-      ctx.beginPath(); for (let x = 0; x <= W; x += 8) x ? ctx.lineTo(x, wy(x)) : ctx.moveTo(x, wy(x));
-      ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 4; ctx.stroke();
-      if (G.state !== 'ready' && p < .97) { const y = wy(300); if (y < H - 6) label(ctx, TX.map.wave, 300, y - 14, { fs: 14, bg: '#1E5A85', color: '#fff' }); }
+      ctx.fillStyle = `rgba(16,62,120,${.35 + .25 * p})`; ctx.fill();
+      [[0, 5, .95], [16, 3, .55], [34, 2, .35]].forEach(([q, lw, a]) => { ctx.beginPath(); for (let x = 0; x <= W; x += 8) x ? ctx.lineTo(x, wy(x, q)) : ctx.moveTo(x, wy(x, q)); ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = lw; ctx.stroke(); });
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; for (let x = 6; x < W; x += 22) { const r = 2 + 1.5 * Math.sin(x * 1.7 + t * 5); ctx.beginPath(); ctx.arc(x, wy(x, 0) - 2, Math.max(.5, r), 0, 7); ctx.fill(); }
+      if (G.state !== 'ready' && p < .97) { const y = wy(300, 0); if (y < H - 6) label(ctx, TX.map.wave, 300, y - 16, { fs: 14, bg: '#1E5A85', color: '#fff' }); }
     }
     // 침수 (FT 하나로 그림)
     // 결과 화면: 이 조건에서 물이 결국 닿는 곳 전체(게임 속 최종 침수 구간)를 옅게 겹쳐 보여 줌
     if (G.state === 'done') { paintFlood(FTMAX + 2); ctx.globalAlpha = .55; ctx.drawImage(floodCv, 0, 0, W, FH * FC); ctx.globalAlpha = 1; }
     else if (t >= lv.T) { paintFlood(t); ctx.imageSmoothingEnabled = true; ctx.drawImage(floodCv, 0, 0, W, FH * FC); }
+    // 혼잡한 곳의 사람들 (제자리에서 조금씩 움직임)
+    for (const [cx, cy, r] of lv.crowd || []) for (let i = 0; i < 9; i++) { const a = i * 2.4, rr = r * (.25 + .6 * ((i * 37) % 10) / 10); person(cx + Math.cos(a) * rr + Math.sin(t * 2 + i) * 1.2, cy + Math.sin(a) * rr * .45, a, '#B8C4CC', .62, t * 3 + i, 1); }
     // 지정 대피 장소 강조 (천천히 커졌다 작아지는 원 — 번쩍임 없음)
     if (G.state === 'play') for (const id of lv.shelters) { const s = SHELTERS[id], r = 22 + 3 * Math.sin(t * 2.4); ctx.beginPath(); ctx.arc(s.x, s.y - 2, r, 0, 7); ctx.strokeStyle = 'rgba(47,143,91,.75)'; ctx.lineWidth = 3; ctx.stroke(); }
+    // 함께 대피하는 주민
+    if (G.state !== 'ready') for (const n of G.npcs) { const q = npcAt(n, t); if (q) person(q[0], q[1], q[2] ?? -Math.PI / 2, n.col, .95, t * 9, 1.4); }
+    else for (const n of G.npcs) person(n.pts[0][0], n.pts[0][1], -Math.PI / 2, n.col, .95, 0, 1.4);
     // 이동한 길
-    if (G.trail.length > 1) { ctx.beginPath(); G.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = G.state === 'done' ? '#7B4FB0' : 'rgba(123,79,176,.55)'; ctx.lineWidth = G.state === 'done' ? 4.5 : 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(); }
+    if (G.trail.length > 1) { ctx.beginPath(); G.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = G.state === 'done' ? '#7B4FB0' : 'rgba(123,79,176,.5)'; ctx.lineWidth = G.state === 'done' ? 4.5 : 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(); }
     // 출발점
     const [sx, sy] = lv.start; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fillStyle = '#7B4FB0'; ctx.fill();
-    // 캐릭터: 주황 원 + 흰 테두리 + 진행 방향 표시
-    ctx.save(); ctx.translate(G.x, G.y);
-    ctx.beginPath(); ctx.arc(0, 0, PR + 4, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fill();
-    ctx.beginPath(); ctx.arc(0, 0, PR + 1, 0, 7); ctx.fillStyle = G.state === 'done' && !G.result.ok ? '#7B8792' : '#E8553E'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
-    ctx.rotate(G.dir); ctx.beginPath(); ctx.moveTo(PR + 6, 0); ctx.lineTo(PR + 1, -4); ctx.lineTo(PR + 1, 4); ctx.closePath(); ctx.fillStyle = INK; ctx.fill();
-    ctx.restore();
+    // 나: 흰 테두리 원 위에 걷는 사람
+    ctx.beginPath(); ctx.arc(G.x, G.y, 11, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill(); ctx.strokeStyle = '#E8553E'; ctx.lineWidth = 2; ctx.stroke();
+    person(G.x, G.y, G.dir, G.state === 'done' && !G.result.ok ? '#7B8792' : '#E8553E', 1, G.walk, 1.6);
     // 결과 표시: 중요한 지점 번호
-    if (G.state === 'done' && G.result) G.result.marks.forEach((m, i) => { ctx.beginPath(); ctx.arc(m[0], m[1], 11, 0, 7); ctx.fillStyle = '#F2B233'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = INK; ctx.font = '13px Jua, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), m[0], m[1] + 1); });
+    if (G.state === 'done' && G.result) G.result.marks.forEach((m, i) => { ctx.beginPath(); ctx.arc(m[0], m[1] - 16, 10, 0, 7); ctx.fillStyle = '#F2B233'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = INK; ctx.font = '13px Jua, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), m[0], m[1] - 15); });
   }
 
   /* ---------- 위쪽 표시줄: 남은 시간 · 목표 · 일시 정지 · 소리 ---------- */
@@ -419,45 +509,60 @@
     if (!ok) {
       const e = Math.max(1, Math.round(elev(G.x, G.y)));
       marks.push([G.x, G.y]); notes.push(G.moved === null ? TX.note.stay(e, Math.round(G.t)) : TX.note.fail(nameAt(G.x, G.y), e, Math.round(G.t)));
-      notes.push(delay >= 5 ? TX.note.late(Math.round(delay)) : TX.note.tryHigh);
+      notes.push(delay >= 2.5 ? TX.note.late(Math.round(delay)) : TX.note.tryHigh);
     } else {
       // 지나간 길 가운데 물이 닿기까지 여유가 가장 짧았던 곳
       let best = null;
       for (const [x, y, t] of G.trail) { const ft = ftAt(x, y); if (ft > 0 && isFinite(ft)) { const m = ft - t; if (!best || m < best.m) best = { x, y, m }; } }
-      if (best) { marks.push([best.x, best.y]); const nm = nameAt(best.x, best.y), e = Math.max(1, Math.round(elev(best.x, best.y))); notes.push(best.m < 10 ? TX.note.close(nm, e, Math.max(0, Math.round(best.m))) : TX.note.safeLow(nm, e, Math.round(best.m))); }
+      if (best) { marks.push([best.x, best.y]); const nm = nameAt(best.x, best.y), e = Math.max(1, Math.round(elev(best.x, best.y))); notes.push(best.m < 4 ? TX.note.close(nm, e, Math.max(0, Math.round(best.m))) : TX.note.safeLow(nm, e, Math.round(best.m))); }
       else notes.push(TX.note.allHigh);
-      notes.push(delay >= 5 ? TX.note.lateOk(Math.round(delay)) : why === 'bldg' ? TX.note.bldg : TX.note.quick);
+      notes.push(delay >= 2.5 ? TX.note.lateOk(Math.round(delay)) : why === 'bldg' ? TX.note.bldg : TX.note.quick);
     }
-    return { ok, why, notes: notes.slice(0, 2), marks: marks.slice(0, 2), time: Math.round(G.t) };
+    // 별: 대피 완료 · 2초 안에 출발 · 여유 있는 길(지나간 곳 모두 물이 닿기 4초 넘게 전에 지남) — 빠르기 순위가 아니라 대피 습관
+    let minM = Infinity; for (const [x, y, t] of G.trail) { const ft = ftAt(x, y); if (ft > 0 && isFinite(ft)) minM = Math.min(minM, ft - t); }
+    const stars = ok ? [true, G.moved !== null && G.moved <= 2, minM >= 4] : [false, false, false];
+    return { ok, why, stars, notes: notes.slice(0, 2), marks: marks.slice(0, 2), time: Math.round(G.t) };
   }
 
   /* ---------- 지도 옆(좁은 화면은 아래) 안내판: 시작 · 진행 · 결과 ---------- */
   const side = $('#g3-side');
+  const starTxt = n => '★'.repeat(n) + '☆'.repeat(3 - n);
   function renderSide() {
-    const lv = G.lv;
+    const lv = G.lv, last = G.li === MODE.levels.length - 1;
     let h = '';
     if (G.state === 'ready') {
       h = `<h4 class="g-h">${TX.side.title}</h4>
-        <div class="g-levels" role="radiogroup" aria-label="${TX.side.levelQ}">${MODE.levels.map((l, i) => `<button type="button" class="g-opt" role="radio" aria-checked="${i === G.li}" data-lv="${i}"><span class="tx">${TX.level[l.id].name}<small>${TX.level[l.id].sub(l.T)}</small></span></button>`).join('')}
+        <div class="g-levels" role="radiogroup" aria-label="${TX.side.levelQ}">${MODE.levels.map((l, i) => `<button type="button" class="g-opt" role="radio" aria-checked="${i === G.li}" data-lv="${i}"><span class="tx">${TX.level[l.id].name}</span><em class="g-stars" aria-label="${TX.side.starsAria(STARS[l.id] || 0)}">${starTxt(STARS[l.id] || 0)}</em></button>`).join('')}
         <button type="button" class="g-opt" disabled><span class="tx">${TX.side.storm}<small>${TX.side.stormSub}</small></span></button></div>
-        <ul class="g-howto"><li><b>${TX.side.goalL}</b> ${TX.side.goal}</li><li><b>${TX.side.keyL}</b> ${TX.side.keys}</li><li><b>${TX.side.mapL}</b> ${TX.side.map}</li></ul>
+        <p class="g-intro">${TX.level[lv.id].intro}</p>
+        <ul class="g-howto"><li><b>${TX.side.keyL}</b> ${TX.side.keys}</li><li><b>${TX.side.starL}</b> ${TX.side.starInfo}</li></ul>
         <p class="g-note">${TX.side.note}</p>
         <button class="btn primary g-go" type="button" data-start>${TX.side.start}</button>`;
     } else if (G.state === 'play') {
-      h = `<h4 class="g-h">${TX.level[lv.id].name}</h4><p class="g-p">${TX.side.playHint}</p>${dpadHTML()}`;
+      h = `<h4 class="g-h">${TX.level[lv.id].name}</h4><p class="g-p">${TX.level[lv.id].intro}</p><p class="g-live" id="g3-live"></p>${dpadHTML()}`;
     } else {
       const R = G.result;
       h = `<div class="verdict ${R.ok ? 'ok' : 'bad'}">${R.ok ? TX.side.okTitle(TX.shelter[R.why], R.time) : TX.side.stopTitle}</div>
+        ${R.ok ? `<ul class="g-starlist">${R.stars.map((v, i) => `<li class="${v ? 'on' : ''}"><span>${v ? '★' : '☆'}</span>${TX.side.starName[i]}</li>`).join('')}</ul>` : ''}
         <ol class="g-notes">${R.notes.map((n, i) => `<li><span class="n">${R.marks[i] ? i + 1 : '·'}</span><span>${n}</span></li>`).join('')}</ol>
         <p class="g-note">${TX.side.resultNote}</p>
-        <div class="g-row"><button class="btn primary" type="button" data-again>${TX.side.again}</button><button class="btn" type="button" data-other>${TX.side.other}</button></div>`;
+        <div class="g-row">${R.ok && !last ? `<button class="btn primary" type="button" data-next>${TX.side.next}</button>` : ''}<button class="btn ${R.ok && !last ? '' : 'primary'}" type="button" data-again>${TX.side.again}</button><button class="btn" type="button" data-other>${TX.side.other}</button></div>`;
     }
     side.innerHTML = h;
     side.querySelectorAll('[data-lv]').forEach(b => b.onclick = () => { setLevel(+b.dataset.lv); side.querySelector(`[data-lv="${b.dataset.lv}"]`).focus(); });
     side.querySelectorAll('[data-start]').forEach(b => b.onclick = start);
-    side.querySelectorAll('[data-again]').forEach(b => b.onclick = () => { reset(); start(); });
+    side.querySelectorAll('[data-again]').forEach(b => b.onclick = again);
+    side.querySelectorAll('[data-next]').forEach(b => b.onclick = next);
     side.querySelectorAll('[data-other]').forEach(b => b.onclick = () => { reset(); side.querySelector('[data-lv]').focus(); });
-    bindDpad();
+    bindDpad(); liveKey = ''; sideLive();
+  }
+  const again = () => { reset(); start(); };
+  const next = () => { if (G.li < MODE.levels.length - 1) { setLevel(G.li + 1); side.querySelector('[data-start]').focus({ preventScroll: true }); } };
+  let liveKey = '';
+  function sideLive() {   // 진행 중: 함께 대피한 주민 수
+    const el = $('#g3-live'); if (!el) return;
+    const k = G.saved + '/' + G.npcs.length; if (k === liveKey) return; liveKey = k;
+    el.textContent = G.npcs.length ? TX.side.saved(G.saved, G.npcs.length) : '';
   }
   const dpadHTML = () => `<div class="dpad" id="dpad3" aria-label="${TX.side.pad}">${[['up', '▲'], ['left', '◀'], ['right', '▶'], ['down', '▼']].map(([d, s]) => `<button type="button" data-dir="${d}" aria-label="${TX.side.dir[d]}">${s}</button>`).join('')}</div>`;
   function bindDpad() {
@@ -476,7 +581,11 @@
     const k = KEY[e.code];
     if (k) { if (G.state === 'play' || e.code.startsWith('Arrow')) e.preventDefault(); if (G.state === 'play' && !G.paused) keys[k] = true; return; }
     if (e.code === 'Space' && G.state === 'play') e.preventDefault();
-    if ((e.code === 'KeyP' || e.code === 'Escape') && G.state === 'play') { e.preventDefault(); setGamePause(!G.paused); }
+    if ((e.code === 'KeyP' || e.code === 'Escape') && G.state === 'play') { e.preventDefault(); setGamePause(!G.paused); return; }
+    const onBtn = /^(BUTTON|A|SUMMARY)$/.test(e.target.tagName);
+    if (G.state === 'ready' && (e.code === 'Enter' || e.code === 'Space') && !onBtn) { e.preventDefault(); start(); }
+    else if (G.state === 'done' && e.code === 'KeyR') { e.preventDefault(); again(); }
+    else if (G.state === 'done' && e.code === 'KeyN' && G.result.ok) { e.preventDefault(); next(); }
   });
   addEventListener('keyup', e => { const k = KEY[e.code]; if (k) keys[k] = false; });
   addEventListener('blur', clearKeys);
@@ -491,7 +600,7 @@
   $('#t3-h-src').textContent = TX.hSrc; $('#t3-h-leg').textContent = TX.hLeg; cv.setAttribute('aria-label', TX.mapAria); $('#t3-src').innerHTML = TX.sources;
 
   /* 자동 점검 스크립트용 연결 */
-  window.__haeil = { G, keys, setLevel, start, reset, setGamePause, walkable, ftAt, elev, levels: MODE.levels, shelters: SHELTERS, SPEED, WC, WW, WH, get WALK() { return WALK; }, get FTMAX() { return FTMAX; } };
+  window.__haeil = { G, keys, setLevel, start, reset, setGamePause, walkable, ftAt, elev, slowAt, levels: MODE.levels, shelters: SHELTERS, SPEED, WC, WW, WH, get WALK() { return WALK; }, get FTMAX() { return FTMAX; } };
 
   setLevel(0);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { drawBase(G.lv); draw(); });
