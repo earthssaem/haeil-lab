@@ -105,28 +105,28 @@
   </div>
 </section>
 
-<!-- ===== 탭3: 해일이 오기 전 — 실시간 대피 게임 ===== -->
+<!-- ===== 탭3: 해일이 오기 전 — 1인칭 대피 게임 (3D: js/vendor/three.min.js) ===== -->
 <section class="panel" id="panel3">
-  <div class="game" id="game3" data-phase="calm">
-    <div class="g-hud">
-      <div class="g-time" id="g3-time" aria-live="off"><b></b><span class="g-bar"><i></i></span></div>
-      <div class="g-goal" id="g3-goal" aria-live="polite"></div>
-      <button class="btn" id="g3-pause" type="button"></button>
-      <button class="btn tog on" id="g3-sound" type="button"></button>
+  <div class="fp" id="fp3" data-state="intro">
+    <div class="fp-hud">
+      <div class="fp-goal" id="fp-goal" aria-live="polite"></div>
+      <button class="btn" id="fp-pause" type="button"></button>
+      <button class="btn tog on" id="fp-sound" type="button"></button>
     </div>
-    <div class="g-main">
-      <div class="stage-wrap map" id="stage3">
-        <canvas id="cv3" tabindex="-1" ></canvas>
-        <div class="g-paused" id="g3-paused" hidden></div>
-      </div>
-      <div class="card g-side" id="g3-side"></div>
+    <div class="stage-wrap" id="stage3">
+      <canvas id="cv3" tabindex="-1"></canvas>
+      <div class="fp-sub" id="fp-sub" aria-live="polite" hidden></div>
+      <div class="fp-toast" id="fp-toast" aria-live="polite" hidden></div>
+      <div class="fp-touch" id="fp-touch"></div>
+      <div class="fp-phone" id="fp-phone" role="dialog" aria-modal="true" hidden></div>
+      <div class="fp-card" id="fp-card"></div>
     </div>
   </div>
-  <details class="card fold g-more">
-    <summary><h3 id="t3-h-leg"></h3></summary>
-    <ul class="legend" id="leg3"></ul>
+  <details class="card fold fp-more">
+    <summary><h3 id="t3-h-guide"></h3></summary>
+    <div class="info" id="t3-guide"></div>
   </details>
-  <details class="card fold g-more">
+  <details class="card fold fp-more">
     <summary><h3 id="t3-h-src"></h3></summary>
     <div class="info" id="t3-src"></div>
   </details>
@@ -138,7 +138,8 @@
   document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === id); });
   document.querySelector('.tab.active').scrollIntoView({ inline: 'center', block: 'nearest' }); })(); // 폰: 탭 줄을 그 탭이 보이게 미리 밀어 둠</script>
 <footer class="site-foot">© 2026 제작: 김연경(earthssaem@gmail.com) | <a class="hub" href="https://earthssaem-lab.vercel.app/" target="_blank" rel="noopener">연경쌤의 지구과학 실험실 둘러보기 →</a></footer>
-<!-- 스크립트는 common → text → tab1 … tab3 순서로 로드 (번들러·ES module 없이 file:// 에서도 동작) -->
+<!-- 스크립트는 three(3D, 탭3) → common → text → tab1 … tab3 순서로 로드 (번들러·ES module 없이 file:// 에서도 동작) -->
+<script src="js/vendor/three.min.js"></script>
 <script src="js/common.js"></script>
 <script src="js/text.js"></script>
 <script src="js/tab1.js"></script>
