@@ -182,65 +182,79 @@ details.more[open]>summary{margin-bottom:4px}
 .readout dd{margin:0;text-align:right;font-family:var(--display);font-size:16px}
 .readout dd small{font-family:var(--body);font-size:11.5px;color:var(--ink-3);margin-left:3px}
 
-/* ---------- 탭3: 실시간 대피 게임 (지도가 화면 대부분, 지도 전체가 스크롤 없이 한 화면) ---------- */
-.game{--ph:#3E9A8C;display:flex;flex-direction:column;gap:8px}
-.game[data-phase="warn"]{--ph:#D9962B}
-.game[data-phase="danger"]{--ph:#E8553E}
-.game[data-phase="flood"]{--ph:#1E5A85}
-.game[data-phase="ok"]{--ph:#3FA36B}
-.game[data-phase="stop"]{--ph:#7B8792}
-.g-hud{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.g-time{flex:0 1 320px;min-width:170px;display:flex;flex-direction:column;gap:3px;padding:5px 12px 6px;border-radius:12px;border:var(--bw) solid var(--ink);background:var(--ph);color:#fff;transition:background .6s}
-.g-time b{font-family:var(--display);font-weight:400;font-size:19px;line-height:1.2;white-space:nowrap}
-.g-bar{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.35);overflow:hidden}
-.g-bar i{display:block;height:100%;background:#fff}
-.g-goal{flex:1 1 150px;min-width:0;font-family:var(--display);font-size:17px;line-height:1.3;word-break:keep-all}
-.g-main{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:start}
-/* 지도 폭 = 화면 높이에 맞춘 16:9 (머리말·표시줄 공간을 뺌) → 스크롤 없이 지도 전체가 보임 */
-#stage3{width:100%;max-width:calc((100vh - 200px) * 16 / 9);margin:0 auto;border-color:var(--ph);transition:border-color .6s;background:#9CC6E2}
-@supports (height:100dvh){#stage3{max-width:calc((100dvh - 200px) * 16 / 9)}}
-#stage3 canvas{outline:none}
-@media(min-width:1000px){.g-main{grid-template-columns:minmax(0,1fr) 260px}}
-.g-paused{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(255,253,248,.92);border:var(--bw) solid var(--ink);border-radius:999px;padding:6px 18px;font-family:var(--display);font-size:18px;pointer-events:none}
-.g-side{display:flex;flex-direction:column;gap:7px;padding:10px 11px}
-.g-h{font-family:var(--display);font-weight:400;font-size:19px;line-height:1.3;margin:0;word-break:keep-all}
-.g-p{margin:0;font-size:14.5px;line-height:1.55;word-break:keep-all;color:var(--ink-2)}
-.g-levels{display:flex;flex-direction:column;gap:4px}
-.g-levels .g-opt{padding:4px 9px;font-size:14px}
-.g-opt{display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-family:var(--body);font-size:14.5px;line-height:1.3;color:var(--ink);background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:5px 10px;word-break:keep-all}
-.g-opt:hover{border-color:var(--ink-3)}
-.g-opt .tx{flex:1;min-width:0}
-.g-opt small{display:block;font-size:12px;color:var(--ink-3)}
-.g-opt[aria-checked="true"]{background:var(--tc-soft);border-color:var(--ink);font-weight:700}
-.g-opt:disabled{opacity:.5;cursor:default}
-.g-opt em.g-stars{flex:none;font-style:normal;color:#E0A93B;font-size:15px;letter-spacing:1px}
-.g-intro{margin:0;font-size:14px;line-height:1.5;word-break:keep-all;padding:7px 10px;border-radius:10px;background:var(--tc-soft);border:1.5px solid var(--ink)}
-.g-live{margin:0;font-family:var(--display);font-size:16px;color:#2F8F5B}
-.g-starlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:14px;color:var(--ink-3)}
-.g-starlist li{display:flex;gap:6px;align-items:center}
-.g-starlist li span{color:#C9CED3;font-size:18px;line-height:1}
-.g-starlist li.on{color:var(--ink)}.g-starlist li.on span{color:#E0A93B}
-.g-howto{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:13px;line-height:1.45;word-break:keep-all}
-.g-howto b{font-family:var(--display);font-weight:400;font-size:14.5px;margin-right:4px}
-.g-note{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2);padding:6px 9px;border-radius:9px;background:#F4F7FA;word-break:keep-all}
-.btn.g-go{font-size:19px;padding:9px 14px;box-shadow:0 3px 0 var(--ink)}
-.g-row{display:flex;flex-wrap:wrap;gap:6px}
-.g-row .btn{flex:1 1 auto;font-size:15px;padding:6px 10px}
-.verdict{font-family:var(--display);font-size:17px;line-height:1.35;padding:7px 11px;border-radius:10px;border:var(--bw) solid var(--ink);word-break:keep-all}
+/* ---------- 탭3: 1인칭 대피 게임 (3D 화면이 대부분, 위쪽엔 목표 한 줄·일시 정지·소리만) ---------- */
+.fp{display:flex;flex-direction:column;gap:8px}
+.fp-hud{display:flex;align-items:center;gap:8px}
+.fp-goal{flex:1 1 auto;min-width:0;font-family:var(--display);font-size:18px;line-height:1.3;word-break:keep-all;padding:5px 12px;border-radius:12px;border:var(--bw) solid var(--ink);background:#fff}
+.fp[data-state="play"] .fp-goal{background:#E4F3E8}
+.fp-hud .btn{flex:0 0 auto}
+/* 3D 화면 폭 = 화면 높이에 맞춘 16:9 (머리말·표시줄 공간을 뺌) → 스크롤 없이 한 화면 */
+#stage3{width:100%;max-width:calc((100vh - 170px) * 16 / 9);margin:0 auto;background:#CFE8F6}
+@supports (height:100dvh){#stage3{max-width:calc((100dvh - 170px) * 16 / 9)}}
+#stage3 canvas{outline:none;touch-action:none}
+/* 안내 카드 (시작 안내 · 일시 정지 메뉴 · 결과): 3D 화면 위에 겹침, 길면 카드 안에서 스크롤 */
+.fp-card{position:absolute;inset:0;z-index:5;display:flex;padding:14px;background:rgba(36,48,58,.38);overflow:auto}
+.fp-card[hidden]{display:none}
+.fp-box{margin:auto;width:min(620px,100%);background:var(--paper);border:var(--bw) solid var(--ink);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:9px;box-shadow:0 4px 0 var(--ink)}
+.fp-box.fp-result{width:min(980px,100%)}
+.fp-rside{display:flex;flex-direction:column;gap:9px;min-width:0}
+@media(min-width:900px){.fp-box.fp-result{flex-direction:row;align-items:center;gap:14px}.fp-rside{flex:1 1 0}#stage3 .fp-result .fp-map{width:min(56%,calc((100vh - 250px) * 720 / 560))}}
+.fp-h{font-family:var(--display);font-weight:400;font-size:22px;line-height:1.3;margin:0;word-break:keep-all}
+.fp-h5{font-family:var(--display);font-weight:400;font-size:16px;margin:0;color:var(--ink-2)}
+.fp-p{margin:0;font-size:15.5px;line-height:1.6;word-break:keep-all}
+.fp-warn{margin:0;font-size:14.5px;line-height:1.5;word-break:keep-all;padding:7px 10px;border-radius:10px;background:#FFF3D6;border:1.5px solid #D9962B}
+.fp-warn::before{content:'⚠ ';font-weight:700}
+.fp-note{margin:0;font-size:13px;line-height:1.5;color:var(--ink-2);word-break:keep-all}
+.fp-keys{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:14px;line-height:1.45;word-break:keep-all}
+.fp-keys b{display:inline-block;min-width:52px;font-family:var(--display);font-weight:400;font-size:15px}
+.btn.fp-go{align-self:center;font-size:20px;padding:9px 30px;box-shadow:0 3px 0 var(--ink)}
+.fp-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.fp-row .btn{font-size:17px;padding:7px 18px}
+.fp-log{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.5;word-break:keep-all}
+.fp-log li{padding:6px 9px;border-radius:9px;background:#fff;border:1.5px solid var(--line)}
+.fp-tag{display:inline-block;margin-right:6px;padding:0 7px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:#5B6B78;vertical-align:1px}
+.fp-tag.sms{background:#C2410C}
+#stage3 .fp-map{position:static;inset:auto;display:block;align-self:center;flex:0 0 auto;width:min(100%,calc(34vh * 720 / 560));height:auto;border:2px solid var(--ink);border-radius:10px;background:#E6EEF3}
+.fp-fb{font-size:16px}
+.fp-result details.more summary{cursor:pointer;font-size:14px;color:var(--ink-2)}
+.fp-result details.more .info{font-size:14px;line-height:1.55;margin-top:4px;word-break:keep-all}
+.fp-result details.more small{display:block;margin-top:4px;font-size:12.5px;color:var(--ink-2)}
+.fp-dec{margin:0;padding-left:1.3em}
+/* 훈련용 가상 재난문자: 휴대 전화 알림 모양 (실제 알림과 헷갈리지 않게 '훈련용' 띠를 크게) */
+.fp-phone{position:absolute;z-index:6;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,calc(100% - 24px));max-height:calc(100% - 16px);overflow:auto;background:#fff;border:3px solid var(--ink);border-radius:20px;padding:0 14px 14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 0 rgba(36,48,58,.5)}
+.fp-phone[hidden]{display:none}
+.fp-ph-tag{margin:0 -14px;padding:7px 12px;border-radius:17px 17px 0 0;background:repeating-linear-gradient(-45deg,#F2B233 0 14px,#24303A 14px 28px);color:#fff;font-family:var(--display);font-size:17px;text-align:center;text-shadow:0 0 3px #000,0 0 3px #000}
+.fp-ph-from{font-size:13px;color:var(--ink-2);font-weight:700}
+.fp-phone p{margin:0;font-size:16px;line-height:1.6;word-break:keep-all}
+.fp-phone .btn{align-self:stretch;font-size:18px;padding:8px}
+/* 안내방송 자막 (항상 보임, 소리를 꺼도 정보 그대로) · 추가 문자(작은 알림, 화면을 막지 않음) */
+.fp-sub{position:absolute;z-index:3;left:50%;bottom:14px;transform:translateX(-50%);width:max-content;max-width:min(760px,calc(100% - 24px));padding:7px 14px;border-radius:12px;background:rgba(20,28,36,.82);color:#fff;font-size:17px;line-height:1.5;word-break:keep-all;text-align:center;pointer-events:none}
+.fp-sub b{color:#FFD979;font-weight:700;margin-right:4px}
+.fp-toast{position:absolute;z-index:3;left:10px;top:10px;max-width:min(420px,calc(100% - 20px));padding:7px 11px;border-radius:12px;background:rgba(255,255,255,.95);border:2px solid #C2410C;font-size:14px;line-height:1.45;word-break:keep-all;pointer-events:none}
+.fp-toast b{color:#C2410C;margin-right:4px}
+.fp-sub[hidden],.fp-toast[hidden]{display:none}
+/* 태블릿·폰: 이동 패드(왼쪽 아래) + 회전 버튼(오른쪽 아래). 마우스 화면에서는 숨김 */
+.fp-touch{display:none}
+.fp-touch button{width:58px;height:54px;border-radius:14px;background:rgba(255,255,255,.88);border:var(--bw) solid var(--ink);box-shadow:0 3px 0 var(--ink);font-size:22px;color:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.fp-touch button.on{background:var(--tc-soft);transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+.fp-pad{position:absolute;z-index:4;left:10px;bottom:10px;display:grid;grid-template-columns:repeat(3,58px);grid-template-rows:repeat(2,54px);gap:6px}
+.fp-pad [data-k="f"]{grid-column:2;grid-row:1}.fp-pad [data-k="l"]{grid-column:1;grid-row:2}.fp-pad [data-k="b"]{grid-column:2;grid-row:2}.fp-pad [data-k="r"]{grid-column:3;grid-row:2}
+.fp-turn{position:absolute;z-index:4;right:10px;bottom:10px;display:flex;gap:8px}
+.fp-turn button{width:66px;height:66px;font-size:28px}
+/* 세로 화면(폰·세로 태블릿): 1인칭 화면을 세로로 길게 (16:9 이면 너무 납작함) */
+@media (orientation:portrait){
+  #stage3{aspect-ratio:auto;height:min(calc(100vh - 200px),135vw);max-width:none}
+  @supports (height:100dvh){#stage3{height:min(calc(100dvh - 200px),135vw)}}
+}
+.fp-hud .btn:not(.tog) .lb{margin-left:5px}
+@media(max-width:600px){.fp-hud .btn .lb{display:none}.fp-hud .btn{font-size:18px;padding:5px 11px}}
+@media (hover:none),(pointer:coarse){
+  .fp[data-state="play"] .fp-touch{display:block}
+  .fp[data-state="play"] .fp-sub{bottom:auto;top:10px}
+}
+.fp-more{margin-top:8px}
+.verdict{font-family:var(--display);font-size:18px;line-height:1.35;padding:7px 11px;border-radius:10px;border:var(--bw) solid var(--ink);word-break:keep-all}
 .verdict.ok{background:#E4F3E8}.verdict.bad{background:#EEF1F4}
-.g-notes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.g-notes li{display:flex;gap:8px;font-size:14px;line-height:1.5;word-break:keep-all}
-.g-notes .n{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#F2B233;border:1.5px solid var(--ink);font-family:var(--display);font-size:13px}
-/* 방향 패드: 지도 밖(안내판 안). 터치 화면에서만 보임 */
-.dpad{display:none;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,56px);gap:6px;justify-content:center;margin-top:4px;touch-action:none;user-select:none;-webkit-user-select:none}
-.dpad button{border-radius:14px;background:#fff;border:var(--bw) solid var(--ink);box-shadow:0 3px 0 var(--ink);font-size:22px;color:var(--ink);touch-action:none}
-.dpad button.on{background:var(--tc-soft);transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
-.dpad [data-dir="up"]{grid-column:2;grid-row:1}.dpad [data-dir="left"]{grid-column:1;grid-row:2}.dpad [data-dir="right"]{grid-column:3;grid-row:2}.dpad [data-dir="down"]{grid-column:2;grid-row:3}
-@media (hover:none),(pointer:coarse){.dpad{display:grid}}
-.g-more{margin-top:8px}
-.legend{list-style:none;margin:0;padding:2px 0 0;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--ink-2)}
-.legend li{display:flex;align-items:center;gap:5px;white-space:nowrap}
-.legend svg{flex:none;width:26px;height:16px}
 ul.src{margin:3px 0 8px;padding-left:1.2em}
 ul.src li+li{margin-top:2px}
 #t3-src small{display:block;margin-top:4px;font-size:12.5px}
@@ -256,8 +270,11 @@ ul.src li+li{margin-top:2px}
   .ex-main{flex-basis:100%;order:2}
   .ex-btn{margin-left:auto}
   .explain{font-size:15px}
-  .g-time b{font-size:16px}.g-goal{font-size:14px;flex-basis:100%;order:3}
-  .g-hud .btn{flex:0 0 auto}
+  .fp-goal{font-size:15px;padding:4px 9px}
+  .fp-h{font-size:19px}.fp-p{font-size:14.5px}.fp-sub{font-size:15px}
+  .fp-card{padding:8px}.fp-box{padding:11px 12px;gap:7px}
+  .fp-pad{grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,50px);gap:5px}
+  .fp-touch button{width:52px;height:50px}.fp-turn button{width:58px;height:58px}
 }
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
 
